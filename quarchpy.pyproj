@@ -1,0 +1,125 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{165206e7-70f6-475a-8f2f-1a1597fdb950}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>scriptFIO.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId />
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="quarchpy\connection.py" />
+    <Compile Include="quarchpy\connection_specific\connection_QIS.py" />
+    <Compile Include="quarchpy\connection_specific\connection_QPS.py" />
+    <Compile Include="quarchpy\connection_specific\connection_ReST.py" />
+    <Compile Include="quarchpy\connection_specific\connection_Serial.py" />
+    <Compile Include="quarchpy\connection_specific\connection_Telnet.py" />
+    <Compile Include="quarchpy\connection_specific\connection_USB.py" />
+    <Compile Include="quarchpy\connection_specific\serial\rfc2217.py" />
+    <Compile Include="quarchpy\connection_specific\serial\rs485.py" />
+    <Compile Include="quarchpy\connection_specific\serial\serialcli.py" />
+    <Compile Include="quarchpy\connection_specific\serial\serialjava.py" />
+    <Compile Include="quarchpy\connection_specific\serial\serialposix.py" />
+    <Compile Include="quarchpy\connection_specific\serial\serialutil.py" />
+    <Compile Include="quarchpy\connection_specific\serial\serialwin32.py" />
+    <Compile Include="quarchpy\connection_specific\serial\threaded\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\hexlify_codec.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports_common.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports_linux.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports_osx.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports_posix.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\list_ports_windows.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\miniterm.py" />
+    <Compile Include="quarchpy\connection_specific\serial\tools\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_alt.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_hwgrep.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_loop.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_rfc2217.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_socket.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\protocol_spy.py" />
+    <Compile Include="quarchpy\connection_specific\serial\urlhandler\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\serial\win32.py" />
+    <Compile Include="quarchpy\connection_specific\serial\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\libusb1.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\MS32\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\MS64\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\test.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\usb1.py" />
+    <Compile Include="quarchpy\connection_specific\usb_libs\__init__.py" />
+    <Compile Include="quarchpy\connection_specific\__init__.py" />
+    <Compile Include="quarchpy\device.py" />
+    <Compile Include="quarchpy\device_specific\quarchPPM.py" />
+    <Compile Include="quarchpy\device_specific\quarchQPS.py" />
+    <Compile Include="quarchpy\device_specific\__init__.py" />
+    <Compile Include="quarchpy\disk_test\DiskTargetSelection.py" />
+    <Compile Include="quarchpy\disk_test\FIO_interface.py" />
+    <Compile Include="quarchpy\disk_test\IometerAutomation.py" />
+    <Compile Include="quarchpy\disk_test\ModuleSelection.py" />
+    <Compile Include="quarchpy\__init__.py" />
+    <Compile Include="scriptFIO.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="quarchpy\connection_specific\QIS\disableterminal.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\help.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\License\LGPL.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\License\LICENSE.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\License\NOTICE.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\README.txt" />
+    <Content Include="quarchpy\connection_specific\QIS\resources\QuarchIcon_128x128.png" />
+    <Content Include="quarchpy\connection_specific\QIS\resources\QuarchIcon_16x16.png" />
+    <Content Include="quarchpy\connection_specific\QIS\resources\QuarchIcon_256x256.png" />
+    <Content Include="quarchpy\connection_specific\QIS\resources\QuarchIcon_32x32.png" />
+    <Content Include="quarchpy\connection_specific\QIS\resources\QuarchIcon_64x64.png" />
+    <Content Include="quarchpy\connection_specific\QPS\License\controlsfx-license.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\License\LGPL.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\License\LICENSE.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\License\Material-Icons.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\License\NOTICE.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\disableterminal.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\help.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\License\LGPL.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\License\LICENSE.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\License\NOTICE.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\README.txt" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\resources\QuarchIcon_128x128.png" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\resources\QuarchIcon_16x16.png" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\resources\QuarchIcon_256x256.png" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\resources\QuarchIcon_32x32.png" />
+    <Content Include="quarchpy\connection_specific\QPS\qis\resources\QuarchIcon_64x64.png" />
+    <Content Include="quarchpy\UpgradeLog.htm" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="quarchpy" />
+    <Folder Include="quarchpy\connection_specific" />
+    <Folder Include="quarchpy\connection_specific\QIS" />
+    <Folder Include="quarchpy\connection_specific\QIS\License" />
+    <Folder Include="quarchpy\connection_specific\QIS\resources" />
+    <Folder Include="quarchpy\connection_specific\QPS\" />
+    <Folder Include="quarchpy\connection_specific\QPS\License" />
+    <Folder Include="quarchpy\connection_specific\QPS\qis" />
+    <Folder Include="quarchpy\connection_specific\QPS\qis\License" />
+    <Folder Include="quarchpy\connection_specific\QPS\qis\resources" />
+    <Folder Include="quarchpy\connection_specific\serial" />
+    <Folder Include="quarchpy\connection_specific\serial\threaded" />
+    <Folder Include="quarchpy\connection_specific\serial\tools" />
+    <Folder Include="quarchpy\connection_specific\serial\urlhandler" />
+    <Folder Include="quarchpy\connection_specific\usb_libs" />
+    <Folder Include="quarchpy\connection_specific\usb_libs\MS32" />
+    <Folder Include="quarchpy\connection_specific\usb_libs\MS64" />
+    <Folder Include="quarchpy\device_specific" />
+    <Folder Include="quarchpy\disk_test" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>
