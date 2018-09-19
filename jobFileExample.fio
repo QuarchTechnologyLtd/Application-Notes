@@ -1,10 +1,9 @@
 [global]
-directory=G\:\TestingMatt
+directory=G\:\TEST
 rw=randread
 size=128m
-runtime=5
+runtime=10
 
 [job1]
 
-[job2]
 

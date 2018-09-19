@@ -1,37 +1,45 @@
+#!/usr/bin/env python
+'''
+This example uses FIO and QPS to run traffic tests to a drive, with the power and performance data displayed.
+
+- The user is prompted to select a target (mapped drive location)
+- FIO is invoked to run a workload to the selected location.  Power and IO performance data is logged and displayed in QPS
+
+########### VERSION HISTORY ###########
+
+10/09/2018 - Pedro Leao		- First Version
+
+########### INSTRUCTIONS ###########
+
+1- Connect a Quarch power module to your PC via USB or LAN
+2- On startup, select the options for the device you wish to test
+
+####################################
+'''
+
+# Import modules and packages
 import time, os
+import Tkinter, tkFileDialog
 from quarchpy import ( requiredQuarchpyVersion,
                      isQpsRunning, startLocalQps, quarchQPS, qpsInterface, GetQpsModuleSelection, 
                      quarchDevice,
                      runFIO)
 
-#if not requiredQuarchpyVersion ("1.3.4"):
-#            raise ValueError ("quarchpy reported version is not new enough for this script!")
+# We use TK for the directory selection box, this code avoids additional TK GUI items being shown
+root = Tkinter.Tk()
+root.withdraw()
 
-def checkUserInput(userVar):
-    if userVar is None:
-        raise ValueError('\nPlease set up this variable at the start of the main function.\n')
+# Verify a recent version of quarchpy is available
+if not requiredQuarchpyVersion ("1.3.4"):
+            raise ValueError ("quarchpy reported version is not new enough for this script!")
 
-# Path where stream will be saved
+# Path where stream will be saved to (defaults to current script path)
 streamPath = os.path.dirname(os.path.realpath(__file__))
-checkUserInput(streamPath)
 
-# Location of .fio file
-fioFile = os.getcwd() + "\jobFileExample.fio"
-checkUserInput(fioFile)
-
-# Launch FIO in selected mode [arg|file]
-#    - arg : will use a dictionary (or list of dictionaries) to run one (or several) FIO jobs for each variable
-#    - file : will use a .fio file to load the arguments
-runMode = "arg"
-checkUserInput(fioFile)
-
-
-
+'''
+Main function, containing the example code to execute FIO and display the results
+'''
 def main():
-
-    if 'filename' in open(fioFile).read():
-        print("This script will not work as intended with the argument \'filename\' in file: " + fioFile)
-        return
 
     # Display title text
     print ("\n################################################################################")
@@ -42,7 +50,7 @@ def main():
     # Checks is QPS is running on the localhost
     if not isQpsRunning():
     # Start the version on QPS installed with the quarchpy, otherwise use the running version
-        startLocalQps(keepQisRunning=True)
+        startLocalQps(keepQisRunning=True)    
 
     # Open an interface to local QPS
     myQps = qpsInterface()
@@ -60,6 +68,10 @@ def main():
     # Prints out connected module information        
     print ("MODULE CONNECTED: \n" + myQpsDevice.sendCommand ("*idn?"))
     
+    '''
+    NOTE: You may need a delay after this call, to allow your drive more time to enumerate on the system before
+    are prompted to select the folder to use for FIO performance testing
+    '''
     # Setup the voltage mode and enable the outputs
     setupPowerOutput (myQpsDevice)
     
@@ -69,58 +81,93 @@ def main():
     # Set the averaging rate to the module
     myQpsDevice.sendCommand ("record:averaging " + averaging)
 
+    # Request user to select the folder to used for FIO data
+    testDirectory = tkFileDialog.askdirectory ()
+    # Convert path to format needed by FIO (backslashes and excaped :)
+    testDirectory = testDirectory.replace ("/","\\")
+    testDirectory = testDirectory.replace (":","\\:")
+
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
     myStream = myQpsDevice.startStream (streamPath + "\\" + fileName)
 
-    # Create new custom channels to plot IO results
+    # Create new custom channels to plot IOPS results
     myStream.createChannel ('read_iops', 'IOPS', 'IOPS', "Yes")
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
+    # Specift the FIO data channels that we want to add to the QPS data
     user_data = ["read_iops","write_iops"]
     
+    # Set the callback functions that will be used to handle events during the test sequence
     fioCallbacks = {"TEST_START": notifyTestStart,
                     "TEST_END": notifyTestEnd,
                     "TEST_RESULT": notifyTestPoint}
     
   
-    #Change / add arguments as required. JOB name should always be last added
-    arguments = {"directory":"G\:\Testing", 
-               "rw":"randread",           
-               "size":"128m",             
-               "runtime":"5",             
-               "output":"testFile",
-               "status-interval":"1",     
-               "name":"job1"}
+    '''
+    First we will run FIO using command line argumants only (no .fio file needed)
+    '''
 
+    # Setup the arguments as required. job 'name' should always be last added
+    arguments = {"directory":testDirectory, 
+                 "rw":"randread",           
+                 "size":"64m",             
+                 "runtime":"10",             
+                 "output":"testFile",       # Required output file, so we can parse it
+                 "status-interval":"1",     # Updadate interval to add user data on the chart
+                 "name":"job1"}
 
-    #job2 = {"directory":"G\:\Testing", 
-    #           "rw":"randread",           
-    #           "size":"128m",             
-    #           "runtime":"5",             
-    #           "output":"mattsfile",
-    #           "status-interval":"1",     
-    #           "name":"job2"}
+    # Wait a few seconds before the next test
+    time.sleep(5)
 
+    # Run the FIO workload                             
+    runFIO(myStream,        # The QPS stream object
+           "arg",           # Execution mode ("arg" for arguments, "file" for FIO job file)
+           fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
+           user_data,       # The user data items that we want to add to the trace
+           arguments)       # FIO execution argumants, describing the workload
 
-    #arguments={job1,job2}
-                                 
-    runFIO(myStream,
-           runMode,
-           fioCallbacks,
-           user_data,
-           arguments,                     
-           fioFile)                     
+    '''
+    Now we will run FIO using a pre-written file ('file' mode execution).
+    NOTE: In this mode, you must specify the path to for FIO testing within the file.  Set this to a valid path first
+    '''
+    arguments = {"directory":testDirectory,                       
+                 "output":"testFile",       # Required output file, so we can parse it
+                 "name":"job2"}
+
+    # Location of the example .fio file used later (in the local folder in this example)
+    fioFile = "jobFileExample.fio" #os.getcwd() + 
+    # Check for a 'filename' parameter in the FIO workload file.  If this is present, we will not be able to specify the output
+    # file from the command line (as required by this example, so we can parse it later)
+    if 'filename' in open(fioFile).read():
+        print("This script will not work as intended with the argument \'filename\' in file: " + fioFile)
+        return
+    # Convert the file path into that needed by FIO (escape :)
+    fioFile = fioFile.replace ("/","\\")
+    fioFile = fioFile.replace (":","\\:")
+    # Run the FIO workload                             
+    runFIO(myStream,        # The QPS stream object
+           "file",          # Execution mode ("arg" for arguments, "file" for FIO job file)
+           fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
+           user_data,       # The user data items that we want to add to the trace
+           arguments,       # FIO execution argumants, describing the workload
+           fioFile)         # File containing the job details           
 
     # End the stream after a few seconds of idle
     time.sleep(5)
 
     myStream.stopStream()
 
+'''
+Callback: Run to add the start point of a test run.  Adds an annotation to the chart
+'''
 def notifyTestStart (myStream, timeStamp, testDescription):
     myStream.addAnnotation("<<text>TEST STARTED</text><extraText>" + testDescription + "</extraText>>", timeStamp)
 
-
+'''
+Callback: Run to add the end point of a test run.  Adds an annotation to the chart and 
+ends the current block of performance data
+'''
 def notifyTestEnd (myStream, timeStamp, testName="END"):
     #breaking data input to graph between tests
     myStream.addDataPoint('read_iops', 'IOPS', "endSeq" , timeStamp )
@@ -128,11 +175,17 @@ def notifyTestEnd (myStream, timeStamp, testName="END"):
 
     myStream.addAnnotation(testName, timeStamp)
 
+'''
+Callback: Run for each test point to be added to the chart
+'''
 def notifyTestPoint (myStream, timeStamp, dataValues):
     myStream.addDataPoint('read_iops', 'IOPS', dataValues['read_iops'], timeStamp)
     myStream.addDataPoint('write_iops', 'IOPS', dataValues['write_iops'], timeStamp)
 
 
+'''
+Function to check the output state of the module and prompt to select an output mode if not set already
+'''
 def setupPowerOutput (myModule):
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
     if "DISABLED" in myModule.sendCommand("config:output Mode?"):
@@ -150,11 +203,15 @@ def setupPowerOutput (myModule):
         # Power Up
         print ("\n Turning the outputs on:"), myModule.sendCommand ("run:power up"), "!"
 
+'''
+Function to get user input in python 2.x or 3.x
+'''
 def userInput(text, orStr=""):
     try:
         return raw_input (text) or orStr
     except NameError:
         return input (text) or orStr        
+
 
 if __name__=="__main__":
     main()
