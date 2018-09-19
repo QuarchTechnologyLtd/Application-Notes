@@ -1,0 +1,10 @@
+[global]
+directory=G\:\TestingMatt
+rw=randread
+size=128m
+runtime=5
+
+[job1]
+
+[job2]
+
