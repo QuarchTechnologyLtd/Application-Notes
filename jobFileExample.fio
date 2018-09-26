@@ -1,9 +1,9 @@
 [global]
 directory=G\:\TEST
 rw=randread
-size=128m
+size=64m
 runtime=10
 
-[job1]
+[job2]
 
 

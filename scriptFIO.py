@@ -81,11 +81,15 @@ def main():
     # Set the averaging rate to the module
     myQpsDevice.sendCommand ("record:averaging " + averaging)
 
-    # Request user to select the folder to used for FIO data
+
+    print ("\n>>> Select a folder for FIO Data:")
+    # Request user to select the folder to use for FIO data
     testDirectory = tkFileDialog.askdirectory ()
-    # Convert path to format needed by FIO (backslashes and excaped :)
+    print ("Selected : " + testDirectory)
+    # Convert path to format needed by FIO (backslashes and colons espaced)
     testDirectory = testDirectory.replace ("/","\\")
     testDirectory = testDirectory.replace (":","\\:")
+    
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
@@ -95,7 +99,11 @@ def main():
     myStream.createChannel ('read_iops', 'IOPS', 'IOPS', "Yes")
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
-    # Specift the FIO data channels that we want to add to the QPS data
+    #hiding all the unwanted default channels
+    myStream.hideAllDefaultChannels()
+    #Specific channel example:  myStream.hideChannel ("3v3:voltage")
+
+    # Specify the FIO data channels that we want to add to the QPS data
     user_data = ["read_iops","write_iops"]
     
     # Set the callback functions that will be used to handle events during the test sequence
@@ -107,18 +115,16 @@ def main():
     '''
     First we will run FIO using command line argumants only (no .fio file needed)
     '''
-
     # Setup the arguments as required. job 'name' should always be last added
     arguments = {"directory":testDirectory, 
                  "rw":"randread",           
                  "size":"64m",             
                  "runtime":"10",             
                  "output":"testFile",       # Required output file, so we can parse it
-                 "status-interval":"1",     # Updadate interval to add user data on the chart
+                 "status-interval":"1",     # Update interval to add user data on the chart
                  "name":"job1"}
 
-    # Wait a few seconds before the next test
-    time.sleep(5)
+   
 
     # Run the FIO workload                             
     runFIO(myStream,        # The QPS stream object
@@ -127,14 +133,16 @@ def main():
            user_data,       # The user data items that we want to add to the trace
            arguments)       # FIO execution argumants, describing the workload
 
+     # Wait a few seconds before the next test
+    time.sleep(5)
+    
+
     '''
     Now we will run FIO using a pre-written file ('file' mode execution).
     NOTE: In this mode, you must specify the path to for FIO testing within the file.  Set this to a valid path first
     '''
     arguments = {"directory":testDirectory,                       
-                 "output":"testFile",       # Required output file, so we can parse it
-                 "name":"job2"}
-
+                 "output":"testFile"}       # Required output file, so we can parse it
     # Location of the example .fio file used later (in the local folder in this example)
     fioFile = "jobFileExample.fio" #os.getcwd() + 
     # Check for a 'filename' parameter in the FIO workload file.  If this is present, we will not be able to specify the output
@@ -161,8 +169,9 @@ def main():
 '''
 Callback: Run to add the start point of a test run.  Adds an annotation to the chart
 '''
-def notifyTestStart (myStream, timeStamp, testDescription):
-    myStream.addAnnotation("<<text>TEST STARTED</text><extraText>" + testDescription + "</extraText>>", timeStamp)
+def notifyTestStart (myStream, timeStamp, title, testDescription):
+    #adding an annotation using xml format
+    myStream.addAnnotation("<<text>" + title + "</text><extraText>" + testDescription + "</extraText>>", timeStamp)
 
 '''
 Callback: Run to add the end point of a test run.  Adds an annotation to the chart and 
@@ -172,7 +181,6 @@ def notifyTestEnd (myStream, timeStamp, testName="END"):
     #breaking data input to graph between tests
     myStream.addDataPoint('read_iops', 'IOPS', "endSeq" , timeStamp )
     myStream.addDataPoint('write_iops', 'IOPS', "endSeq" , timeStamp)
-
     myStream.addAnnotation(testName, timeStamp)
 
 '''
@@ -180,7 +188,7 @@ Callback: Run for each test point to be added to the chart
 '''
 def notifyTestPoint (myStream, timeStamp, dataValues):
     myStream.addDataPoint('read_iops', 'IOPS', dataValues['read_iops'], timeStamp)
-    myStream.addDataPoint('write_iops', 'IOPS', dataValues['write_iops'], timeStamp)
+    myStream.addDataPoint('write_iops', 'IOPS', dataValues['write_iops'], timeStamp)    
 
 
 '''
@@ -190,9 +198,9 @@ def setupPowerOutput (myModule):
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
     if "DISABLED" in myModule.sendCommand("config:output Mode?"):
         try:
-            drive_voltage = raw_input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3]: ") or "3V3"
+            drive_voltage = raw_input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
         except NameError:
-            drive_voltage = input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3]: ") or "3V3"
+            drive_voltage = input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
 
         myModule.sendCommand("config:output:mode:"+ drive_voltage)
     
