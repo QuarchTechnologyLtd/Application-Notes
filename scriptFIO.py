@@ -20,6 +20,7 @@ This example uses FIO and QPS to run traffic tests to a drive, with the power an
 # Import modules and packages
 import time, os
 import Tkinter, tkFileDialog
+
 from quarchpy import ( requiredQuarchpyVersion,
                      isQpsRunning, startLocalQps, quarchQPS, qpsInterface, GetQpsModuleSelection, 
                      quarchDevice,
@@ -31,7 +32,7 @@ root.withdraw()
 
 # Verify a recent version of quarchpy is available
 if not requiredQuarchpyVersion ("1.3.4"):
-            raise ValueError ("quarchpy reported version is not new enough for this script!")
+            raise ValueError ("QuarchPy reported version is outdated for this script!")
 
 # Path where stream will be saved to (defaults to current script path)
 streamPath = os.path.dirname(os.path.realpath(__file__))
@@ -86,7 +87,7 @@ def main():
     # Request user to select the folder to use for FIO data
     testDirectory = tkFileDialog.askdirectory ()
     print ("Selected : " + testDirectory)
-    # Convert path to format needed by FIO (backslashes and colons espaced)
+    # Convert path to format needed by FIO (backslashes and colons escaped)
     testDirectory = testDirectory.replace ("/","\\")
     testDirectory = testDirectory.replace (":","\\:")
     
@@ -100,7 +101,7 @@ def main():
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
     #hiding all the unwanted default channels
-    myStream.hideAllDefaultChannels()
+    myStream.hideDefaultChannels()
     #Specific channel example:  myStream.hideChannel ("3v3:voltage")
 
     # Specify the FIO data channels that we want to add to the QPS data
@@ -110,10 +111,9 @@ def main():
     fioCallbacks = {"TEST_START": notifyTestStart,
                     "TEST_END": notifyTestEnd,
                     "TEST_RESULT": notifyTestPoint}
-    
-  
+
     '''
-    First we will run FIO using command line argumants only (no .fio file needed)
+    First we will run FIO using command line arguments only (no .fio file needed)
     '''
     # Setup the arguments as required. job 'name' should always be last added
     arguments = {"directory":testDirectory, 
@@ -124,14 +124,12 @@ def main():
                  "status-interval":"1",     # Update interval to add user data on the chart
                  "name":"job1"}
 
-   
-
     # Run the FIO workload                             
     runFIO(myStream,        # The QPS stream object
            "arg",           # Execution mode ("arg" for arguments, "file" for FIO job file)
            fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
            user_data,       # The user data items that we want to add to the trace
-           arguments)       # FIO execution argumants, describing the workload
+           arguments)       # FIO execution arguments, describing the workload
 
      # Wait a few seconds before the next test
     time.sleep(5)
@@ -139,12 +137,14 @@ def main():
 
     '''
     Now we will run FIO using a pre-written file ('file' mode execution).
-    NOTE: In this mode, you must specify the path to for FIO testing within the file.  Set this to a valid path first
+    NOTE: In this mode, you must specify the path for FIO testing within the file.  Set this to a valid path first.
     '''
     arguments = {"directory":testDirectory,                       
                  "output":"testFile"}       # Required output file, so we can parse it
+
     # Location of the example .fio file used later (in the local folder in this example)
     fioFile = "jobFileExample.fio" #os.getcwd() + 
+    
     # Check for a 'filename' parameter in the FIO workload file.  If this is present, we will not be able to specify the output
     # file from the command line (as required by this example, so we can parse it later)
     if 'filename' in open(fioFile).read():
@@ -153,6 +153,7 @@ def main():
     # Convert the file path into that needed by FIO (escape :)
     fioFile = fioFile.replace ("/","\\")
     fioFile = fioFile.replace (":","\\:")
+    
     # Run the FIO workload                             
     runFIO(myStream,        # The QPS stream object
            "file",          # Execution mode ("arg" for arguments, "file" for FIO job file)
