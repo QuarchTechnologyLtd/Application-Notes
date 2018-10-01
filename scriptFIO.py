@@ -31,7 +31,7 @@ root = Tkinter.Tk()
 root.withdraw()
 
 # Verify a recent version of quarchpy is available
-if not requiredQuarchpyVersion ("1.3.4"):
+if not requiredQuarchpyVersion ("1.5"):
             raise ValueError ("QuarchPy reported version is outdated for this script!")
 
 # Path where stream will be saved to (defaults to current script path)
@@ -137,7 +137,6 @@ def main():
 
      # Wait a few seconds before the next test
     time.sleep(5)
-    
 
     '''
     Now we will run FIO using a pre-written file ('file' mode execution).
