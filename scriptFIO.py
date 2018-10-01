@@ -101,8 +101,12 @@ def main():
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
     #hiding all the unwanted default channels
-    myStream.hideDefaultChannels()
-    #Specific channel example:  myStream.hideChannel ("3v3:voltage")
+    myStream.hideChannel ("3v3:voltage")
+    myStream.hideChannel ("5v:voltage")
+    myStream.hideChannel ("12v:voltage")
+    myStream.hideChannel ("3v3:current")
+    myStream.hideChannel ("5v:current")
+    myStream.hideChannel ("12v:current")
 
     # Specify the FIO data channels that we want to add to the QPS data
     user_data = ["read_iops","write_iops"]
