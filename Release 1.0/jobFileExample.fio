@@ -1,0 +1,9 @@
+[global]
+directory=D\:\TEST
+rw=randread
+size=64m
+runtime=10
+
+[job2]
+
+
