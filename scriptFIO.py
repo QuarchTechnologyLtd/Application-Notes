@@ -122,7 +122,7 @@ def main():
     # Setup the arguments as required. job 'name' should always be last added
     arguments = {"directory":testDirectory, 
                  "rw":"randread",           
-                 "size":"64m",             
+                 "size":"128m",             
                  "runtime":"10",             
                  "output":"testFile",       # Required output file, so we can parse it
                  "status-interval":"1",     # Update interval to add user data on the chart
@@ -184,7 +184,7 @@ ends the current block of performance data
 def notifyTestEnd (myStream, timeStamp, testName="END"):
     #breaking data input to graph between tests
     myStream.addDataPoint('read_iops', 'IOPS', "endSeq" , timeStamp )
-    myStream.addDataPoint('write_iops', 'IOPS', "endSeq" , timeStamp)
+    myStream.addDataPoint('write_iops', 'IOPS', "endSeq" , str(int(timeStamp)+1))
     myStream.addAnnotation(testName, timeStamp)
 
 '''
