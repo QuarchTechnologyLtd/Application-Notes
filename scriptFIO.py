@@ -123,7 +123,8 @@ def main():
     arguments = {"directory":testDirectory, 
                  "rw":"randread",           
                  "size":"128m",             
-                 "runtime":"10",             
+                 "runtime":"10",
+                 "time_based":"",           # This will force FIO to run for the time declared in runtime
                  "output":"testFile",       # Required output file, so we can parse it
                  "status-interval":"1",     # Update interval to add user data on the chart
                  "name":"job1"}
