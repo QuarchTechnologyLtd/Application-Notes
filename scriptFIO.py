@@ -7,7 +7,7 @@ This example uses FIO and QPS to run traffic tests to a drive, with the power an
 
 ########### VERSION HISTORY ###########
 
-10/09/2018 - Pedro Leao		- First Version
+10/09/2018 - Pedro Leao     - First Version
 
 ########### INSTRUCTIONS ###########
 
