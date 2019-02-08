@@ -19,7 +19,14 @@ This example uses FIO and QPS to run traffic tests to a drive, with the power an
 
 # Import modules and packages
 import time, os
-import Tkinter, tkFileDialog
+
+try: 
+    #python 2.7
+    import Tkinter, tkFileDialog
+except:
+    #python 3.7
+    import tkinter
+    from tkinter import filedialog
 
 from quarchpy import ( requiredQuarchpyVersion,
                      isQpsRunning, startLocalQps, quarchQPS, qpsInterface, GetQpsModuleSelection, 
@@ -27,7 +34,13 @@ from quarchpy import ( requiredQuarchpyVersion,
                      runFIO)
 
 # We use TK for the directory selection box, this code avoids additional TK GUI items being shown
-root = Tkinter.Tk()
+try:
+    #python 3.7
+    root = tkinter.Tk()
+    tkFileDialog = filedialog
+except:
+    #python 2.7
+    root = Tkinter.Tk()
 root.withdraw()
 
 # Verify a recent version of quarchpy is available
@@ -87,8 +100,7 @@ def main():
     # Request user to select the folder to use for FIO data
     testDirectory = tkFileDialog.askdirectory ()
     print ("Selected : " + testDirectory)
-    # Convert path to format needed by FIO (backslashes and colons escaped)
-    testDirectory = testDirectory.replace ("/","\\")
+    # Convert path to format needed by FIO (colons escaped)
     testDirectory = testDirectory.replace (":","\\:")
     
 
