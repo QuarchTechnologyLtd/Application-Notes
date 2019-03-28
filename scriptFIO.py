@@ -28,10 +28,9 @@ except:
     import tkinter
     from tkinter import filedialog
 
-from quarchpy import ( requiredQuarchpyVersion,
-                     isQpsRunning, startLocalQps, quarchQPS, qpsInterface, GetQpsModuleSelection, 
-                     quarchDevice,
-                     runFIO)
+from quarchpy.device import *
+from quarchpy.qps import *
+from quarchpy.fio import *
 
 # We use TK for the directory selection box, this code avoids additional TK GUI items being shown
 try:
@@ -42,10 +41,6 @@ except:
     #python 2.7
     root = Tkinter.Tk()
 root.withdraw()
-
-# Verify a recent version of quarchpy is available
-if not requiredQuarchpyVersion ("1.5"):
-            raise ValueError ("QuarchPy reported version is outdated for this script!")
 
 # Path where stream will be saved to (defaults to current script path)
 streamPath = os.path.dirname(os.path.realpath(__file__))
@@ -153,7 +148,8 @@ def main():
 
     '''
     Now we will run FIO using a pre-written file ('file' mode execution).
-    NOTE: In this mode, you must specify the path for FIO testing within the file.  Set this to a valid path first.
+    NOTE: In this mode, you MUST specify the path for FIO testing within the file.  Set this to a valid path first
+    Using the "directory=" parameter of the .fio file
     '''
     arguments = {"directory":testDirectory,                       
                  "output":"testFile"}       # Required output file, so we can parse it

@@ -1,5 +1,5 @@
 [global]
-directory=D\:\TEST
+directory=C\:\Temp
 rw=randread
 size=64m
 runtime=10
