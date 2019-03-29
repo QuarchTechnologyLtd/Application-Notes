@@ -28,6 +28,7 @@ except:
     import tkinter
     from tkinter import filedialog
 
+import quarchpy
 from quarchpy.device import *
 from quarchpy.qps import *
 from quarchpy.fio import *
@@ -50,6 +51,9 @@ Main function, containing the example code to execute FIO and display the result
 '''
 def main():
 
+    # Required min version for this application note
+    quarchpy.requiredQuarchpyVersion ("2.0.0")
+    
     # Display title text
     print ("\n################################################################################")
     print ("\n                           QUARCH TECHNOLOGY                        \n\n  ")
