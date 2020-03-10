@@ -1,10 +1,11 @@
 [global]
 directory=C\:\Temp
 rw=randread
-size=64m
-runtime=10
+size=128m
+runtime=20
+bs=16k
 time_based
 
-[job2]
+[16kRead]
 
 

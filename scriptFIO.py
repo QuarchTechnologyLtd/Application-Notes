@@ -97,7 +97,12 @@ def main():
 
     print ("\n>>> Select a folder for FIO Data:")
     # Request user to select the folder to use for FIO data
-    testDirectory = tkFileDialog.askdirectory ()
+    try:
+        testDirectory = tkFileDialog.askdirectory ()
+    except:
+        testDirectory = userInput("Failed to open folder dialog, the enter the folder path for FIO to access\n>", None)
+
+    print ("")
     print ("Selected : " + testDirectory)
     # Convert path to format needed by FIO (colons escaped)
     testDirectory = testDirectory.replace (":","\\:")
@@ -134,13 +139,15 @@ def main():
     arguments = {"directory":testDirectory, 
                  "rw":"randread",           
                  "size":"128m",             
-                 "runtime":"10",
+                 "runtime":"20",
+                 "bs":"4k",
                  "time_based":"",           # This will force FIO to run for the time declared in runtime
                  "output":"testFile",       # Required output file, so we can parse it
                  "status-interval":"1",     # Update interval to add user data on the chart
-                 "name":"job1"}
+                 "name":"4kRead"}
 
-    # Run the FIO workload                             
+    # Run the FIO workload        
+    print ("Running Job 1 of 2: FIO run from arguments in Python code")
     runFIO(myStream,        # The QPS stream object
            "arg",           # Execution mode ("arg" for arguments, "file" for FIO job file)
            fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
@@ -148,6 +155,7 @@ def main():
            arguments)       # FIO execution arguments, describing the workload
 
      # Wait a few seconds before the next test
+    print ("Sleep 5 seconds to let drive idle")
     time.sleep(5)
 
     '''
@@ -170,7 +178,8 @@ def main():
     fioFile = fioFile.replace ("/","\\")
     fioFile = fioFile.replace (":","\\:")
     
-    # Run the FIO workload                             
+    # Run the FIO workload      
+    print ("Running Job 2 of 2: FIO run from a .fio file describing the jobs")    
     runFIO(myStream,        # The QPS stream object
            "file",          # Execution mode ("arg" for arguments, "file" for FIO job file)
            fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
@@ -179,9 +188,11 @@ def main():
            fioFile)         # File containing the job details           
 
     # End the stream after a few seconds of idle
+    print ("Sleep 5 seconds to let drive idle")
     time.sleep(5)
 
     myStream.stopStream()
+    myQpsDevice.closeConnection()
 
 '''
 Callback: Run to add the start point of a test run.  Adds an annotation to the chart
