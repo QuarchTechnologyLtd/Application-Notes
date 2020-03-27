@@ -89,7 +89,7 @@ def main():
     setupPowerOutput (myQpsDevice)
     
     # Get the required averaging rate from the user.  This sets the resolution of data to record        
-    averaging = userInput("\n>>> Enter the average rate [32k]: ", "32k")
+    averaging = userInput("\n>>> Enter the average rate [1k]: ", "1k")
     
     # Set the averaging rate to the module
     myQpsDevice.sendCommand ("record:averaging " + averaging)
