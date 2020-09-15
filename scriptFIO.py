@@ -7,7 +7,8 @@ This example uses FIO and QPS to run traffic tests to a drive, with the power an
 
 ########### VERSION HISTORY ###########
 
-10/09/2018 - Pedro Leao     - First Version
+10/09/2018 - Pedro Cruz   - First Version
+15/09/2020 - Pedro Cruz   - Updated to support PAM
 
 ########### INSTRUCTIONS ###########
 
@@ -86,7 +87,8 @@ def main():
     are prompted to select the folder to use for FIO performance testing
     '''
     # Setup the voltage mode and enable the outputs
-    setupPowerOutput (myQpsDevice)
+    # Uncomment for modules that can perform power margining (XLC, HDPPM)
+    # setupPowerOutput (myQpsDevice)
     
     # Get the required averaging rate from the user.  This sets the resolution of data to record        
     averaging = userInput("\n>>> Enter the average rate [1k]: ", "1k")
@@ -117,13 +119,9 @@ def main():
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
     #hiding all the unwanted default channels
-    myStream.hideChannel ("3v3:voltage")
-    myStream.hideChannel ("5v:voltage")
-    myStream.hideChannel ("12v:voltage")
-    myStream.hideChannel ("3v3:current")
-    myStream.hideChannel ("5v:current")
-    myStream.hideChannel ("12v:current")
-
+    #myStream.hideChannel ("3v3:voltage")
+    #myStream.hideChannel ("3v3:current")
+    
     # Specify the FIO data channels that we want to add to the QPS data
     user_data = ["read_iops","write_iops"]
     
