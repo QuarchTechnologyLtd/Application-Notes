@@ -86,9 +86,8 @@ def main():
     NOTE: You may need a delay after this call, to allow your drive more time to enumerate on the system before
     are prompted to select the folder to use for FIO performance testing
     '''
-    # Setup the voltage mode and enable the outputs
-    # Uncomment for modules that can perform power margining (XLC, HDPPM)
-    # setupPowerOutput (myQpsDevice)
+    # Setup the voltage mode and enable the outputs (for HD PPM and XLC only)
+    setupPowerOutput (myQpsDevice)
     
     # Get the required averaging rate from the user.  This sets the resolution of data to record        
     averaging = userInput("\n>>> Enter the average rate [1k]: ", "1k")
@@ -221,8 +220,14 @@ def notifyTestPoint (myStream, timeStamp, dataValues):
 Function to check the output state of the module and prompt to select an output mode if not set already
 '''
 def setupPowerOutput (myModule):
+    output_mode = myModule.sendCommand("config:output Mode?")
+
+    # Skip setupPowerOutput for PAM modules
+    if output_mode[0:4] == 'FAIL':
+        return
+
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
-    if "DISABLED" in myModule.sendCommand("config:output Mode?"):
+    if "DISABLED" in output_mode:
         try:
             drive_voltage = raw_input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
         except NameError:
