@@ -45,7 +45,7 @@ def main():
     # Specify the file to process
     ######################################################
 
-    data_path="test_csv.csv"
+    data_path="test_data.csv"
 
     ######################################################
     # Run the averaging process
