@@ -103,7 +103,7 @@ def active_power_calc (data_path, col_name="5V power uW", window=1000000000, csv
     value1 = (int(data_line.split(csv_delimiter)[header_pos]))
     value2 = (int(data_line2.split(csv_delimiter)[header_pos]))
     if (window_samples == 2):
-        worst_case = ((value1 + value2) / 2)
+        worst_case = (value1 + value2)
     elif (window_samples == 1):
         worst_case = Value1        
         if (value2 > worst_case):
@@ -116,11 +116,13 @@ def active_power_calc (data_path, col_name="5V power uW", window=1000000000, csv
     
     # Loop until the file is complete   
     data_line = data_line = file.readline ()
-    while (data_line is not None):        
+    while (data_line is not None):  
+
+        window_len = len(window_sample_data)
 
         # If the sample window is full, we have to pop the oldest value now
         # We also subtract this from the sum of all points (this avoids summing the whole window every cycle)
-        if (len(window_sample_data) == window_samples):            
+        if (window_len == window_samples):            
             sum_value = sum_value - window_sample_data.pop()
     
         # Read the next data element
@@ -128,18 +130,19 @@ def active_power_calc (data_path, col_name="5V power uW", window=1000000000, csv
         # Add it to the window data
         window_sample_data.appendleft (value1)
         sum_value = sum_value + value1
-                
-        # Sum the values in the queue and track the worst case average       
-        window_average = sum_value / len(window_sample_data)
-        if (window_average > worst_case):
-            worst_case = window_average                   
+        
+        # Only calculate worst case if the window is filled (skips data at start)
+        if (window_len == window_samples):
+            if (sum_value > worst_case):
+                worst_case = sum_value                  
 
         # Read the next line in       
         data_line = file.readline ()
         if (data_line == ''):
             break                
             
-    return worst_case
+    # Calculate the average as the final operation
+    return worst_case / window_samples
         
 
 if __name__=="__main__":
