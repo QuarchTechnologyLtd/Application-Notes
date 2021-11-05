@@ -25,6 +25,8 @@ import quarchpy
 from quarchpy.device import *
 from collections import deque
 from datetime import datetime
+from quarchpy.qis import *
+from quarchpy import qisInterface
 
 '''
 Main function, containing the example code to execute
@@ -42,25 +44,89 @@ def main():
     print ("\n                           QUARCH TECHNOLOGY                                  \n\n")
     print ("                        Power Data post-processing                                  ")
     print ("\n################################################################################\n")    
-    print ("\n\n")
+    print ("\n\n")        
 
     ######################################################
-    # Specify the file to process
+    # The source of the data can be aleady present, but
+    # we may want to capture it now from QIS
     ######################################################
 
+    # Set the path for the CSV file to process
     data_path="test_data.csv"
 
+    # Checks is QIS is running on the localhost
+    if not isQisRunning():
+        print ("-Starting QIS")
+    # Start the version on QIS installed with the quarchpy, otherwise use the running version
+        startLocalQis()
+    # Connect to QIS and ask the user to select a module to use
+    myQis = qisInterface() 
+    # Request a list of all USB and LAN accessible modules
+    print ("-Select a device, MUST be USB or TCP (not REST)")
+    myDeviceID = myQis.GetQisModuleSelection(additionalOptions=["rescan"])
+    while myDeviceID is "rescan":
+        myDeviceID = myQis.GetQisModuleSelection(additionalOptions=["rescan"])
+
+    # Open a connection to the device.  You can skip the selection screen above and replace
+    # myDeviceID with a connection string such as "USB:QTL1999-06-021" or "TCP:192.168.1.26"
+    myQuarchDevice = quarchDevice (myDeviceID, ConType = "QIS")
+    # Convert the base device to a power device class
+    myQisDevice = quarchPPM (myQuarchDevice)
+    
+    # Prints out connected module information        
+    print ("MODULE CONNECTED: \n" + myQisDevice.sendCommand ("hello?"))
+    # Setup the voltage mode and enable the outputs.
+    setupPowerOutput (myQisDevice)
+    
+    # Sets for a manual record trigger, so we can start the stream from the script
+    msg = myQisDevice.sendCommand("record:trigger:mode manual")
+    if (msg != "OK"):
+        print ("Failed to set trigger mode: " + msg)
+    # Set the averaging rate to the module to 16 (64uS) as the closest to 100uS
+    msg = myQisDevice.sendCommand ("record:averaging 1k")   
+    if (msg != "OK"):
+        print ("Failed to set hardware averaging: " + msg)
+    # Ask QIS to include power calculations
+    msg = myQisDevice.sendCommand ("stream mode power enable")
+    if (msg != "OK"):
+        print ("Failed to set power record mode: " + msg)
+    # Ask QIS to include power total (which will make all devices measured very similar in processing needed)
+    msg = myQisDevice.sendCommand ("stream mode power total enable")
+    if (msg != "OK"):
+        print ("Failed to set total power record mode: " + msg)
+    # Ensure the latest level of header is requested so PPM and PAM data format is the same in the CSV
+    msg = myQisDevice.sendCommand ("stream mode header v3")
+    if (msg != "OK"):
+        print ("Failed to set software resampling: " + msg)
+        
+    print ("-Recording data...")
+    
+    # Start the stream process to the csv file
+#    myQisDevice.startStream (data_path, 20000, '',separator=",")
+    
+    # *************************
+    # At this point you can start any workload you require.  For now we will just sleep for the record time required
+    # Set this as you require.  We print dots in the example to show it is running correctly
+    # *************************        
+ #   for x in range(10):
+  #      time.sleep(1)
+   #     print (".")
+    
+    print ("-Stopping recording")
+#    myQisDevice.stopStream()    
+
+
     ######################################################
-    # Run the averaging process
+    # Run the averaging process across the existing file
     ######################################################
     
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
     print("Start Time =", current_time)
     
-    # Request the worst case 1S average across the trace.  Time specified in same units as the CSV recording (nS)
+    # Request the worst case 100mS average across the trace.  Time specified in same units as the CSV recording (uS in this case)
     print ("Processing CSV file...")
-    worst_case = active_power_calc (data_path, col_name="5V power uW", window=1000000000, expected_sample_time=4096000)
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100000, expected_sample_time=4096)
     print ("Active power over window: " + str(worst_case) + "uW")
     
     now = datetime.now()
@@ -81,7 +147,7 @@ csv_delimiter = The delimiter character used in the CSV
 max_calc_time = Optional value for the end time, if you you do not wish to process the whole file
 expected_sample_time = Optional value for the expected sample time of the file.  If set then the script will error if it does not match the measured value
 '''
-def active_power_calc (data_path, col_name="5V power uW", window=1000000000, csv_delimiter=",",max_calc_time=-1,expected_sample_time=-1):
+def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=",",max_calc_time=-1,expected_sample_time=-1):
     
     worst_case = 0    
     sum_value = 0
@@ -190,6 +256,25 @@ def active_power_calc (data_path, col_name="5V power uW", window=1000000000, csv
     # Calculate the average as the final operation
     return worst_case / window_samples
         
+'''
+Function to check the output state of the module and prompt to select an output mode if not set already
+'''
+def setupPowerOutput (myModule):
+    # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
+    if "DISABLED" in myModule.sendCommand("config:output Mode?"):
+        try:
+            drive_voltage = raw_input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
+        except NameError:
+            drive_voltage = input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
+
+        myModule.sendCommand("config:output:mode:"+ drive_voltage)
+    
+    # Check the state of the module and power up if necessary
+    powerState = myModule.sendCommand ("run power?")
+    # If outputs are off
+    if "OFF" in powerState:
+        # Power Up
+        print ("\n Turning the outputs on:"), myModule.sendCommand ("run:power up"), "!"
 
 if __name__=="__main__":
     main()
