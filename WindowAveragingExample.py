@@ -82,8 +82,8 @@ def main():
     msg = myQisDevice.sendCommand("record:trigger:mode manual")
     if (msg != "OK"):
         print ("Failed to set trigger mode: " + msg)
-    # Set the averaging rate to the module to 16 (64uS) as the closest to 100uS
-    msg = myQisDevice.sendCommand ("record:averaging 1k")   
+    # Set the averaging rate to the module to 8uS
+    msg = myQisDevice.sendCommand ("record:averaging 2")   
     if (msg != "OK"):
         print ("Failed to set hardware averaging: " + msg)
     # Ask QIS to include power calculations
@@ -102,18 +102,18 @@ def main():
     print ("-Recording data...")
     
     # Start the stream process to the csv file
-#    myQisDevice.startStream (data_path, 20000, '',separator=",")
+    myQisDevice.startStream (data_path, 20000, '',separator=",")
     
     # *************************
     # At this point you can start any workload you require.  For now we will just sleep for the record time required
     # Set this as you require.  We print dots in the example to show it is running correctly
     # *************************        
- #   for x in range(10):
-  #      time.sleep(1)
-   #     print (".")
+    for x in range(10):
+        time.sleep(1)
+        print (".")
     
     print ("-Stopping recording")
-#    myQisDevice.stopStream()    
+    myQisDevice.stopStream()    
 
 
     ######################################################
@@ -124,10 +124,14 @@ def main():
     current_time = now.strftime("%H:%M:%S")
     print("Start Time =", current_time)
     
-    # Request the worst case 100mS average across the trace.  Time specified in same units as the CSV recording (uS in this case)
-    print ("Processing CSV file...")
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100000, expected_sample_time=4096)
-    print ("Active power over window: " + str(worst_case) + "uW")
+    # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
+    print ("Processing CSV file")
+    # 100mS window
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100000, expected_sample_time=8)
+    print ("Active power over 100 mS: " + str(worst_case) + "uW")
+    # 1 Second window
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=8)
+    print ("Active power over 1 Second: " + str(worst_case) + "uW")
     
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
