@@ -19,7 +19,8 @@ This example uses FIO and QPS to run traffic tests to a drive, with the power an
 '''
 
 # Import modules and packages
-import time, os
+import os
+import time
 
 try: 
     #python 2.7
@@ -73,7 +74,7 @@ def main():
     myDeviceID = GetQpsModuleSelection (myQps)
 
     # Create a Quarch device connected via QPS
-    myQuarchDevice = quarchDevice (myDeviceID, ConType = "QPS")
+    myQuarchDevice = getQuarchDevice(myDeviceID, ConType = "QPS")
     
     # Upgrade Quarch device to QPS device
     myQpsDevice = quarchQPS(myQuarchDevice)
@@ -196,7 +197,8 @@ Callback: Run to add the start point of a test run.  Adds an annotation to the c
 '''
 def notifyTestStart (myStream, timeStamp, title, testDescription):
     #adding an annotation using xml format
-    myStream.addAnnotation("<<text>" + title + "</text><extraText>" + testDescription + "</extraText>>", timeStamp)
+    print(myStream.addAnnotation(title = title, extraText = testDescription, annotationTime= timeStamp))
+
 
 '''
 Callback: Run to add the end point of a test run.  Adds an annotation to the chart and 
