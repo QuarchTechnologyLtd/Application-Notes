@@ -20,6 +20,7 @@ worst case active power consumption, using a user specified averaging window
 
 
 import os, time
+import math
 import logging
 import quarchpy
 from quarchpy.device import *
@@ -102,18 +103,40 @@ def main():
     print ("-Recording data...")
     
     # Start the stream process to the csv file
-    myQisDevice.startStream (data_path, 20000, '',separator=",")
+    myQisDevice.startStream (data_path, 200000, '',separator=",")
     
     # *************************
     # At this point you can start any workload you require.  For now we will just sleep for the record time required
-    # Set this as you require.  We print dots in the example to show it is running correctly
+    # Set this as you require.  Here we print a simple set of times, to show how long the test has to run
     # *************************        
-    for x in range(10):
+    
+    # 2 hour record time
+    record_time = 7200
+    time_notify = 60*1 # Update user every 1 minutes
+    time_tracker = time_notify
+    for x in range(record_time):
         time.sleep(1)
-        print (".")
+        time_tracker = time_tracker - 1
+        if (time_tracker <= 0):
+            time_tracker = time_notify
+            print ("Record Minutes Remaining: " + str(math.floor((record_time-x)/60)))
+            
+    # Check the stream status, so we know if anything went wrong during the stream
+    streamStatus = module.streamRunningStatus()
+    if ("Stopped" in streamStatus):
+        if ("Overrun" in streamStatus):
+            print ('Stream interrupted due to internal device buffer has filled up')
+        elif ("User" in streamStatus):
+            print ('Stream interrupted due to max file size has being exceeded')            
+        else:
+            print("Stopped for unknown reason")
     
     print ("-Stopping recording")
     myQisDevice.stopStream()    
+    
+    # check to ensure stream is fully saved all data before continuing the script
+    while not "stopped" in str(module.streamRunningStatus()).lower():
+        time.sleep(1)
 
 
     ######################################################
@@ -127,8 +150,8 @@ def main():
     # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
     print ("Processing CSV file")
     # 100mS window
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100000, expected_sample_time=8)
-    print ("Active power over 100 mS: " + str(worst_case) + "uW")
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=8)
+    print ("Active power over 100 uS: " + str(worst_case) + "uW")
     # 1 Second window
     worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=8)
     print ("Active power over 1 Second: " + str(worst_case) + "uW")
