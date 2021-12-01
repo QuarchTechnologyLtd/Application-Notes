@@ -83,8 +83,8 @@ def main():
     msg = myQisDevice.sendCommand("record:trigger:mode manual")
     if (msg != "OK"):
         print ("Failed to set trigger mode: " + msg)
-    # Set the averaging rate to the module to 8uS
-    msg = myQisDevice.sendCommand ("record:averaging 2")   
+    # Set the averaging rate to the module to 16uS
+    msg = myQisDevice.sendCommand ("record:averaging 4")   
     if (msg != "OK"):
         print ("Failed to set hardware averaging: " + msg)
     # Ask QIS to include power calculations
@@ -111,8 +111,8 @@ def main():
     # *************************        
     
     # 2 hour record time
-    record_time = 7200
-    time_notify = 60*1 # Update user every 1 minutes
+    record_time = 20
+    time_notify = 60 # Update user every 1 minutes
     time_tracker = time_notify
     for x in range(record_time):
         time.sleep(1)
@@ -120,22 +120,26 @@ def main():
         if (time_tracker <= 0):
             time_tracker = time_notify
             print ("Record Minutes Remaining: " + str(math.floor((record_time-x)/60)))
+            streamStatus = myQisDevice.streamRunningStatus()
+            if ("Stopped" in streamStatus):
+                raise ValueError ("Stream failed during reording period!: " + streamStatus)
             
     # Check the stream status, so we know if anything went wrong during the stream
-    streamStatus = module.streamRunningStatus()
+    streamStatus = myQisDevice.streamRunningStatus()
     if ("Stopped" in streamStatus):
         if ("Overrun" in streamStatus):
             print ('Stream interrupted due to internal device buffer has filled up')
         elif ("User" in streamStatus):
             print ('Stream interrupted due to max file size has being exceeded')            
         else:
-            print("Stopped for unknown reason")
+            print("Stopped for unknown reason: " + streamStatus)
+        raise ValueError ("Stream failed during reording period!: " + streamStatus)
     
     print ("-Stopping recording")
     myQisDevice.stopStream()    
     
     # check to ensure stream is fully saved all data before continuing the script
-    while not "stopped" in str(module.streamRunningStatus()).lower():
+    while not "stopped" in str(myQisDevice.streamRunningStatus()).lower():
         time.sleep(1)
 
 
@@ -150,10 +154,10 @@ def main():
     # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
     print ("Processing CSV file")
     # 100mS window
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=8)
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=16)
     print ("Active power over 100 uS: " + str(worst_case) + "uW")
     # 1 Second window
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=8)
+    worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=16)
     print ("Active power over 1 Second: " + str(worst_case) + "uW")
     
     now = datetime.now()
