@@ -54,6 +54,7 @@ def main():
 
     # Set the path for the CSV file to process
     data_path="test_data.csv"
+    results_path="test_results.txt"
 
     # Checks is QIS is running on the localhost
     if not isQisRunning():
@@ -65,7 +66,7 @@ def main():
     # Request a list of all USB and LAN accessible modules
     print ("-Select a device, MUST be USB or TCP (not REST)")
     myDeviceID = myQis.GetQisModuleSelection(additionalOptions=["rescan"])
-    while myDeviceID is "rescan":
+    while myDeviceID == "rescan":
         myDeviceID = myQis.GetQisModuleSelection(additionalOptions=["rescan"])
 
     # Open a connection to the device.  You can skip the selection screen above and replace
@@ -149,16 +150,23 @@ def main():
     
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
-    print("Start Time =", current_time)
+    print("Start Time: ", current_time)
     
-    # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
-    print ("Processing CSV file")
-    # 100mS window
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=16)
-    print ("Active power over 100 uS: " + str(worst_case) + "uW")
-    # 1 Second window
-    worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=16)
-    print ("Active power over 1 Second: " + str(worst_case) + "uW")
+    # Append the results we take to the output file
+    with open (results_path, 'a') as out_file:    
+        out_file.write("Test Time=" + current_time + "\n")
+        # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
+        print ("Processing CSV file")
+        # 100mS window
+        worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=16)
+        out_file.write("Active power over 100 uS: " + str(worst_case) + "uW\n")
+        print ("Active power over 100 uS: " + str(worst_case) + "uW")
+        # 1 Second window
+        worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=16)
+        out_file.write("Active power over 1 Second: " + str(worst_case) + "uW\n")
+        print ("Active power over 1 Second: " + str(worst_case) + "uW")
+        # Spacing between results
+        out_file.write("\n\n")
     
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
