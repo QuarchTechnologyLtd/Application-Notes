@@ -112,7 +112,7 @@ def main():
     # *************************        
     
     # 2 hour record time
-    record_time = 20
+    record_time = 60
     time_notify = 60 # Update user every 1 minutes
     time_tracker = time_notify
     for x in range(record_time):
