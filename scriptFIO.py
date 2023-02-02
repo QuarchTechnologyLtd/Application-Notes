@@ -1,27 +1,39 @@
 #!/usr/bin/env python
 '''
-This example uses FIO and QPS to run traffic tests to a drive, with the power and performance data displayed.
+AN-017 - Application note demonstrating FIO and QPS running traffic tests to a drive, with the power and performance data displayed.
 
-- The user is prompted to select a target (mapped drive location)
-- FIO is invoked to run a workload to the selected location.  Power and IO performance data is logged and displayed in QPS
+- Uses quarchpy to automate QPS stream from quarch module, and kick off a FIO workload plotting data on QPS.
 
 ########### VERSION HISTORY ###########
 
 10/09/2018 - Pedro Cruz   - First Version
 15/09/2020 - Pedro Cruz   - Updated to support PAM
+31/02/2023 - Stuart Boon - Updated format
+
+########### REQUIREMENTS ###########
+
+1- Python (3.x recommended)
+    https://www.python.org/downloads/
+2- Quarchpy python package
+    https://quarch.com/products/quarchpy-python-package/
+3- Quarch USB driver (Required for USB connected devices on windows only)
+    https://quarch.com/downloads/driver/
+4- Check USB permissions if using Linux:
+    https://quarch.com/support/faqs/usb/
+5- Install FIO
+    https://github.com/axboe/fio
 
 ########### INSTRUCTIONS ###########
-
-1- Connect a Quarch power module to your PC via USB or LAN
-2- On startup, select the options for the device you wish to test
-
+1- Install the required items above
+2- Connect a Quarch power module to your PC via USB or LAN
+3- Run this script, select the options for the device you wish to test
+4- Use the file dialogue to pick the location on the drive you would like to test. (WARNING This should NOT be on the same drive as you OS.)
 ####################################
 '''
 
 # Import modules and packages
 import os
 import time
-
 try: 
     #python 2.7
     import Tkinter, tkFileDialog
@@ -29,7 +41,6 @@ except:
     #python 3.7
     import tkinter
     from tkinter import filedialog
-
 import quarchpy
 from quarchpy.device import *
 from quarchpy.qps import *
@@ -70,7 +81,7 @@ def main():
     # Open an interface to local QPS
     myQps = qpsInterface()
     
-    # Module to work with
+    # Select Quarch Module
     myDeviceID = GetQpsModuleSelection (myQps)
 
     # Create a Quarch device connected via QPS
@@ -96,11 +107,10 @@ def main():
     # Set the averaging rate to the module
     myQpsDevice.sendCommand ("record:averaging " + averaging)
 
-
     print ("\n>>> Select a folder for FIO Data:")
     # Request user to select the folder to use for FIO data
     try:
-        testDirectory = tkFileDialog.askdirectory ()
+        testDirectory = tkFileDialog.askdirectory()
     except:
         testDirectory = userInput("Failed to open folder dialog, the enter the folder path for FIO to access\n>", None)
 
@@ -108,19 +118,18 @@ def main():
     print ("Selected : " + testDirectory)
     # Convert path to format needed by FIO (colons escaped)
     testDirectory = testDirectory.replace (":","\\:")
-    
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
-    myStream = myQpsDevice.startStream (streamPath + "\\" + fileName)
+    myStream = myQpsDevice.startStream ("\""+streamPath + "\\" + fileName+"\"")
 
     # Create new custom channels to plot IOPS results
     myStream.createChannel ('read_iops', 'IOPS', 'IOPS', "Yes")
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
-    #hiding all the unwanted default channels
-    #myStream.hideChannel ("3v3:voltage")
-    #myStream.hideChannel ("3v3:current")
+    # hide unwanted default channels
+    # myStream.hideChannel ("3v3:voltage")
+    # myStream.hideChannel ("3v3:current")
     
     # Specify the FIO data channels that we want to add to the QPS data
     user_data = ["read_iops","write_iops"]
@@ -199,7 +208,6 @@ def notifyTestStart (myStream, timeStamp, title, testDescription):
     #adding an annotation using xml format
     print(myStream.addAnnotation(title = title, extraText = testDescription, annotationTime= timeStamp))
 
-
 '''
 Callback: Run to add the end point of a test run.  Adds an annotation to the chart and 
 ends the current block of performance data
@@ -217,7 +225,6 @@ def notifyTestPoint (myStream, timeStamp, dataValues):
     myStream.addDataPoint('read_iops', 'IOPS', dataValues['read_iops'], timeStamp)
     myStream.addDataPoint('write_iops', 'IOPS', dataValues['write_iops'], timeStamp)    
 
-
 '''
 Function to check the output state of the module and prompt to select an output mode if not set already
 '''
@@ -234,7 +241,6 @@ def setupPowerOutput (myModule):
             drive_voltage = raw_input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
         except NameError:
             drive_voltage = input("\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ") or "3V3" or "5V"
-
         myModule.sendCommand("config:output:mode:"+ drive_voltage)
     
     # Check the state of the module and power up if necessary
