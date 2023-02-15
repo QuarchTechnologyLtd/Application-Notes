@@ -20,7 +20,7 @@ AN-017 - Application note demonstrating FIO and QPS running traffic tests to a d
     https://quarch.com/downloads/driver/
 4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
-5- Install FIO
+5- Install FIO (Go to releases and look for msi installer for windows or install CMD for linux version. )
     https://github.com/axboe/fio
 
 ########### INSTRUCTIONS ###########
@@ -45,7 +45,7 @@ import quarchpy
 from quarchpy.device import *
 from quarchpy.qps import *
 from quarchpy.fio import *
-
+from quarchpy.user_interface.user_interface import visual_sleep
 # We use TK for the directory selection box, this code avoids additional TK GUI items being shown
 try:
     #python 3.7
@@ -105,29 +105,30 @@ def main():
     averaging = userInput("\n>>> Enter the average rate [1k]: ", "1k")
     
     # Set the averaging rate to the module
-    myQpsDevice.sendCommand ("record:averaging " + averaging)
+    cmdResponse=myQpsDevice.sendCommand ("record:averaging " + averaging)
+    print("Sent:record:averaging " + averaging+"   Responded:"+cmdResponse)
 
     print ("\n>>> Select a folder for FIO Data:")
     # Request user to select the folder to use for FIO data
     try:
         testDirectory = tkFileDialog.askdirectory()
     except:
-        testDirectory = userInput("Failed to open folder dialog, the enter the folder path for FIO to access\n>", None)
+        testDirectory = userInput("Failed to open folder dialog, the enter the folder path for FIO to access\n>", None) #todo test this exception
 
     print ("")
     print ("Selected : " + testDirectory)
     # Convert path to format needed by FIO (colons escaped)
-    testDirectory = testDirectory.replace (":","\\:")
+    testDirectory = testDirectory.replace (":","\:")
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
-    myStream = myQpsDevice.startStream ("\""+streamPath + "\\" + fileName+"\"")
+    myStream = myQpsDevice.startStream ("\""+streamPath + "\\" + fileName+"\"") #todo path obj
 
     # Create new custom channels to plot IOPS results
     myStream.createChannel ('read_iops', 'IOPS', 'IOPS', "Yes")
     myStream.createChannel ('write_iops', 'IOPS', 'IOPS', "Yes")
 
-    # hide unwanted default channels
+    # hide unwanted default channels. This is commented out so you can see all default channels. Uncomment and change to hide any undesired traces on the QPS trace.
     # myStream.hideChannel ("3v3:voltage")
     # myStream.hideChannel ("3v3:current")
     
@@ -154,7 +155,7 @@ def main():
                  "name":"4kRead"}
 
     # Run the FIO workload        
-    print ("Running Job 1 of 2: FIO run from arguments in Python code")
+    print ("Running Job 1 of 2: FIO run from arguments in Python code\nThis may take some time to complete.")
     runFIO(myStream,        # The QPS stream object
            "arg",           # Execution mode ("arg" for arguments, "file" for FIO job file)
            fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
@@ -162,8 +163,8 @@ def main():
            arguments)       # FIO execution arguments, describing the workload
 
      # Wait a few seconds before the next test
-    print ("Sleep 5 seconds to let drive idle")
-    time.sleep(5)
+    visual_sleep(sleepLength=5, updatePeriod=0.5, title="Sleep 5 seconds to let drive idle")
+
 
     '''
     Now we will run FIO using a pre-written file ('file' mode execution).
@@ -186,7 +187,7 @@ def main():
     fioFile = fioFile.replace (":","\\:")
     
     # Run the FIO workload      
-    print ("Running Job 2 of 2: FIO run from a .fio file describing the jobs")    
+    print ("Running Job 2 of 2: FIO run from a .fio file describing the jobs\nThis may take some time to complete.")
     runFIO(myStream,        # The QPS stream object
            "file",          # Execution mode ("arg" for arguments, "file" for FIO job file)
            fioCallbacks,    # Callback list, used to notify the test status and retrieve user data
@@ -195,11 +196,11 @@ def main():
            fioFile)         # File containing the job details           
 
     # End the stream after a few seconds of idle
-    print ("Sleep 5 seconds to let drive idle")
-    time.sleep(5)
+    visual_sleep(sleepLength=5, updatePeriod=0.5, title="Sleep 5 seconds to let drive idle")
 
     myStream.stopStream()
     myQpsDevice.closeConnection()
+    print("You have reach the end of the application note.\nHave a nice day!")
 
 '''
 Callback: Run to add the start point of a test run.  Adds an annotation to the chart
@@ -234,7 +235,6 @@ def setupPowerOutput (myModule):
     # Skip setupPowerOutput for PAM modules
     if output_mode[0:4] == 'FAIL':
         return
-
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
     if "DISABLED" in output_mode:
         try:
