@@ -98,7 +98,7 @@ def main():
     NOTE: You may need a delay after this call, to allow your drive more time to enumerate on the system before
     are prompted to select the folder to use for FIO performance testing
     '''
-    # Setup the voltage mode and enable the outputs (for HD PPM and XLC only)
+    # Setup the voltage mode and enable the outputs (for PPM modules.)
     setupPowerOutput (myQpsDevice)
     
     # Get the required averaging rate from the user.  This sets the resolution of data to record        
@@ -114,11 +114,13 @@ def main():
         testDirectory = tkFileDialog.askdirectory()
     except:
         testDirectory = userInput("Failed to open folder dialog, the enter the folder path for FIO to access\n>", None) #todo test this exception
+    if testDirectory=="":
+        raise Exception("No directory selected")
 
     print ("")
     print ("Selected : " + testDirectory)
-    # Convert path to format needed by FIO (colons escaped)
-    testDirectory = testDirectory.replace (":","\:")
+    #FIO needs colons escaped when passing "directory" or "filename" look at FIO documentation online for more info.
+    testDirectory = testDirectory.replace (":","\:")# escape colons from tkinter input.
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
