@@ -30,7 +30,7 @@ if it responded/recovered correctly
     https://www.python.org/downloads/
 2- Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
-3- Quarch USB driver (Required for USB connected devices on windows only)
+3- Quarch USB driver (Required for USB connected devices on Windows only)
     https://quarch.com/downloads/driver/
 4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
@@ -39,7 +39,7 @@ if it responded/recovered correctly
 
 1- Install the required items above
 2- Connect a Quarch module to your PC via USB, Serial or LAN and power it on
-2- Run the script and follow the instructions on screen
+3- Run the script and follow the instructions on screen
 
 ####################################
 '''
