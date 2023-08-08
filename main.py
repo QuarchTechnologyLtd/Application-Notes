@@ -191,7 +191,7 @@ def startStream(myQIS, fileName, qisDevice, duration):
                                     if int(lastTime) < int(streamDuration / (10 ** -3)):
                                         f.write(thisLine + b'\r' + b'\n')  # Put the CR back on the end
                                     else:
-                                        print("STOPPP !!!!!!!!!!!!!!!!!")
+                                        print("Stream Completed.")
                                         streamComplete = True
                                         break
                         else:
@@ -207,11 +207,11 @@ def startStream(myQIS, fileName, qisDevice, duration):
                             # printText('QisInterface overrun - breaking')
                             break
                         elif "Stopped" in streamStatus:
-                            print("STOPPP !!!!!!!!!!!!!!!!!")
+                            print("Stream Stopped.")
                             break
                 break
         except IOError:
-            print("POGGERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("")
 
     # Attempts to stop the stream using "rec stop"
     response = qisDevice.sendCommand('rec stop')
