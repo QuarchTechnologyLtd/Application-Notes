@@ -85,7 +85,7 @@ def main():
     if (msg != "OK"):
         print ("Failed to set trigger mode: " + msg)
     # Set the averaging rate to the module to 16uS
-    msg = myQisDevice.sendCommand ("record:averaging 4")   
+    msg = myQisDevice.sendCommand ("record:averaging 16")
     if (msg != "OK"):
         print ("Failed to set hardware averaging: " + msg)
     # Ask QIS to include power calculations
@@ -261,9 +261,14 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
         # We also subtract this from the sum of all points (this avoids summing the whole window every cycle)
         if (window_len == window_samples):            
             sum_value = sum_value - window_sample_data.pop()
-    
-        # Read the next data element
-        value1 = int(data_line.split (csv_delimiter)[header_pos])
+
+
+        # If data element is empty set next data element to 0
+        if data_line.split(csv_delimiter)[header_pos] == "":
+            value1 = 0
+        else:
+            # Read the next data element
+            value1 = int(data_line.split (csv_delimiter)[header_pos])
         # Add it to the window data
         window_sample_data.appendleft (value1)
         sum_value = sum_value + value1
