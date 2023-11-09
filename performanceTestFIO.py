@@ -34,6 +34,7 @@ AN-017 - Application note demonstrating FIO and QPS running traffic tests to a d
 # Import modules and packages
 import os
 import time
+import logging  # Optionally used to create a log to help with debugging
 try: 
     #python 2.7
     import Tkinter, tkFileDialog
@@ -64,6 +65,11 @@ Main function, containing the example code to execute FIO and display the result
 '''
 def main():
 
+    # If required you can enable python logging, quarchpy supports this and your log file
+    # will show the process of scanning devices and sending the commands.  Just comment out
+    # the line below.  This can be useful to send to quarch if you encounter errors
+    #logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
+
     # Required min version for this application note
     quarchpy.requiredQuarchpyVersion ("2.0.0")
     
@@ -76,7 +82,7 @@ def main():
     # Checks is QPS is running on the localhost
     if not isQpsRunning():
     # Start the version on QPS installed with the quarchpy, otherwise use the running version
-        startLocalQps(keepQisRunning=True)    
+        startLocalQps()
 
     # Open an interface to local QPS
     myQps = qpsInterface()
@@ -123,8 +129,9 @@ def main():
     testDirectory = testDirectory.replace (":","\:")# escape colons from tkinter input.
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
-    fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())        
-    myStream = myQpsDevice.startStream ("\""+streamPath + "\\" + fileName+"\"") #todo path obj
+    fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())  
+    streamLocation = os.path.join (streamPath, fileName)
+    myStream = myQpsDevice.startStream (streamLocation)
 
     # Create new custom channels to plot IOPS results
     myStream.createChannel ('read_iops', 'IOPS', 'IOPS', "Yes")
