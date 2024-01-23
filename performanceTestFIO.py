@@ -254,11 +254,6 @@ def calculate_results(myStream):
     readAveMPSJob2 = readAveIOPSJob2 * 16 / 1024  # 16k block size in job 2
     readAveMBPSPWattJob2 = readAveMPSJob2 / totPowerAveJob2
 
-    # print("read Mbps before 1,2: "+str(readAveMPSJob1)+", "+str(readAveMPSJob2))#TODO Remove use it or loose it! test if its the same as the above calcs.
-    # readAveMPSJob2 = stats.loc[stats[('Text', 'NA')] == "16kRead", ('Read_MB/s read_throughput Mean', 'MB/s')].values[0] #TODO Remove use it or loose it! test if its the same as the above calcs.
-    # readAveMPSJob1 = stats.loc[stats[('Text', 'NA')] == "4kRead", ('Read_MB/s read_throughput Mean', 'MB/s')].values[0]#TODO Remove use it or loose it! test if its the same as the above calcs.
-    # print("read Mbps after 1,2: "+str(readAveMPSJob1)+", "+str(readAveMPSJob2))#TODO Remove use it or loose it! test if its the same as the above calcs.
-
     # Output the results
     print("\n\n####Results####")
     print("Job 1 \"4kRead\"   Ave IOPS:" + str(readAveIOPSJob1) + "  Ave MB/s:" + str(
