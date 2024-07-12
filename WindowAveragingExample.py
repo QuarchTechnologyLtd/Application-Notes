@@ -79,7 +79,7 @@ def main():
     print ("MODULE CONNECTED: \n" + myQisDevice.sendCommand ("hello?"))
     # Setup the voltage mode and enable the outputs.
     setupPowerOutput (myQisDevice)
-    
+
     # Sets for a manual record trigger, so we can start the stream from the script
     msg = myQisDevice.sendCommand("record:trigger:mode manual")
     if (msg != "OK"):
@@ -235,21 +235,23 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
         stop_at_sample = max_calc_time / time_step
         if (max_calc_time < window):
             raise ValueError ("Window size is greater than the data to process")
-    
-    # Deal with unusual cases that window is 2 samples or less
-    value1 = (int(data_line.split(csv_delimiter)[header_pos]))
-    value2 = (int(data_line2.split(csv_delimiter)[header_pos]))
-    if (window_samples == 2):
-        worst_case = (value1 + value2)
-    elif (window_samples == 1):
-        worst_case = Value1        
-        if (value2 > worst_case):
-            worst_case = value2
-    # Otherwise push the samples onto the window queue and track the total
-    else:
-        window_sample_data.appendleft (value1)
-        window_sample_data.appendleft (value2)  
-        sum_value = value1 + value2
+
+    # Skip over if the line contains empty data
+    if data_line.split(csv_delimiter)[header_pos] != "":
+        # Deal with unusual cases that window is 2 samples or less
+        value1 = (int(data_line.split(csv_delimiter)[header_pos]))
+        value2 = (int(data_line2.split(csv_delimiter)[header_pos]))
+        if (window_samples == 2):
+            worst_case = (value1 + value2)
+        elif (window_samples == 1):
+            worst_case = value1
+            if (value2 > worst_case):
+                worst_case = value2
+        # Otherwise push the samples onto the window queue and track the total
+        else:
+            window_sample_data.appendleft (value1)
+            window_sample_data.appendleft (value2)
+            sum_value = value1 + value2
     
     # Loop until the file is complete   
     data_line = data_line = file.readline ()
@@ -263,9 +265,12 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
             sum_value = sum_value - window_sample_data.pop()
 
 
-        # If data element is empty set next data element to 0
+        # If data element is empty continue to next line
         if data_line.split(csv_delimiter)[header_pos] == "":
-            value1 = 0
+            data_line = file.readline()
+            if (data_line == ''):
+                break
+            continue
         else:
             # Read the next data element
             value1 = int(data_line.split (csv_delimiter)[header_pos])
