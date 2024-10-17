@@ -1,25 +1,37 @@
 #!/usr/bin/env python
-'''
-This example demonstrates post-processing calculation of a standard QPS output CSV file, to calculate 
-worst case active power consumption, using a user specified averaging window
+"""
+AN-025 - Application note demonstrating post-processing of Quarch Power Studio (QPS) output
 
-########### VERSION HISTORY ###########
+This example demonstrates post-processing calculation of a standard QPS output CSV file, to calculate 
+worst case active power consumption, using a user specified averaging window.
+
+########### VERSION HISTORY ########
 
 07/09/2021 - Andy Norrie     - First Version
 20/10/2021 - Andy Norrie     - Significant speed increase by avoiding summing the deque
 28/10/2021 - Andy Norrie     - Added additional parameter options and cross-checks
 
+########### REQUIREMENTS ###########
+
+1- Python (3.x recommended)
+    https://www.python.org/downloads/
+2- Quarchpy python package
+    https://quarch.com/products/quarchpy-python-package/
+3- Quarch USB driver (Required for USB connected devices on Windows only)
+    https://quarch.com/downloads/driver/
+4- Check USB permissions if using Linux:
+    https://quarch.com/support/faqs/usb/
 
 ########### INSTRUCTIONS ###########
 
-1- Export a trace from QPS or similar in standard CSV format
+1- Exports a trace from QPS or similar in standard CSV format
 2- Specify the path of the file in the script and run it
 
 ####################################
-'''
+"""
 
 
-import os, time
+import time
 import math
 import logging
 import quarchpy
@@ -30,31 +42,27 @@ from quarchpy.qis import *
 from quarchpy import qisInterface
 
 '''
-Main function, containing the example code to execute
+Main function, containing the example code to execute.
 '''
 def main():
+    # Display title text
+    print("\n\nQuarch application note example: AN-025")
+    print("---------------------------------------\n\n")
+
+    # Version 2.0.20 or higher expected for this application note
+    quarchpy.requiredQuarchpyVersion ("2.0.20")
 
     # Enable logging
     logging.basicConfig (filename="app.log", filemode='w', level=logging.DEBUG)
 
-    # Required min version for this application note
-    quarchpy.requiredQuarchpyVersion ("2.0.20")
-        
-    # Display title text
-    print ("\n################################################################################\n")
-    print ("\n                           QUARCH TECHNOLOGY                                  \n\n")
-    print ("                        Power Data post-processing                                  ")
-    print ("\n################################################################################\n")    
-    print ("\n\n")        
-
     ######################################################
-    # The source of the data can be aleady present, but
+    # The source of the data can be already present, but
     # we may want to capture it now from QIS
     ######################################################
 
     # Set the path for the CSV file to process
-    data_path="test_data.csv"
-    results_path="test_results.txt"
+    data_path = "test_data.csv"
+    results_path = "test_results.txt"
 
     # Checks is QIS is running on the localhost
     if not isQisRunning():
@@ -85,7 +93,9 @@ def main():
     if (msg != "OK"):
         print ("Failed to set trigger mode: " + msg)
     # Set the averaging rate to the module to 16uS
-    msg = myQisDevice.sendCommand ("record:averaging 16")
+    sample_time_number_samples = 16
+    sample_time_us = 64
+    msg = myQisDevice.sendCommand ("record:averaging " + str(sample_time_number_samples))
     if (msg != "OK"):
         print ("Failed to set hardware averaging: " + msg)
     # Ask QIS to include power calculations
@@ -104,7 +114,7 @@ def main():
     print ("-Recording data...")
     
     # Start the stream process to the csv file
-    myQisDevice.startStream (data_path, 200000, '',separator=",")
+    myQisDevice.startStream(data_path, 200000, '',separator=",")
     
     # *************************
     # At this point you can start any workload you require.  For now we will just sleep for the record time required
@@ -123,7 +133,7 @@ def main():
             print ("Record Minutes Remaining: " + str(math.floor((record_time-x)/60)))
             streamStatus = myQisDevice.streamRunningStatus()
             if ("Stopped" in streamStatus):
-                raise ValueError ("Stream failed during reording period!: " + streamStatus)
+                raise ValueError ("Stream failed during recording period!: " + streamStatus)
             
     # Check the stream status, so we know if anything went wrong during the stream
     streamStatus = myQisDevice.streamRunningStatus()
@@ -134,7 +144,7 @@ def main():
             print ('Stream interrupted due to max file size has being exceeded')            
         else:
             print("Stopped for unknown reason: " + streamStatus)
-        raise ValueError ("Stream failed during reording period!: " + streamStatus)
+        raise ValueError ("Stream failed during recording period!: " + streamStatus)
     
     print ("-Stopping recording")
     myQisDevice.stopStream()    
@@ -158,11 +168,11 @@ def main():
         # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
         print ("Processing CSV file")
         # 100mS window
-        worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=16)
+        worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=sample_time_us)
         out_file.write("Active power over 100 uS: " + str(worst_case) + "uW\n")
         print ("Active power over 100 uS: " + str(worst_case) + "uW")
         # 1 Second window
-        worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=16)
+        worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=sample_time_us)
         out_file.write("Active power over 1 Second: " + str(worst_case) + "uW\n")
         print ("Active power over 1 Second: " + str(worst_case) + "uW")
         # Spacing between results
@@ -175,16 +185,18 @@ def main():
     print ("ALL DONE!")
 
 '''
-Reads the CSV and calculated a single worst case value for any window of the specified length
-Return value is in the same units as the colum data. Window time is in the same unit as the time column
-Assumes the first column is the time data
+Reads the CSV and calculates a single worst case value for any window of the specified length.
+Return value is in the same units as the colum data.
+Window time is in the same unit as the time column.
+Assumes the first column is the time data.
 
-data_path = The path of the CSV file to read
-col_name = The name of the column containing the data to process
-window = The time span of the averaging window in the same units as the CSV time column
-csv_delimiter = The delimiter character used in the CSV
-max_calc_time = Optional value for the end time, if you you do not wish to process the whole file
-expected_sample_time = Optional value for the expected sample time of the file.  If set then the script will error if it does not match the measured value
+data_path               = The path of the CSV file to read.
+col_name                = The name of the column containing the data to process.
+window                  = The time span of the averaging window in the same units as the CSV time column.
+csv_delimiter           = The delimiter character used in the CSV.
+max_calc_time           = Optional value for the end time, if you you do not wish to process the whole file.
+expected_sample_time    = Optional value for the expected sample time of the file.  If set then the script will error 
+                          if it does not match the measured value.
 '''
 def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=",",max_calc_time=-1,expected_sample_time=-1):
     
@@ -198,23 +210,23 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
     file = open (data_path, "r")
     
     # Read the column header, which must contain the specified column name
-    data_line = file.readline ()
+    data_line = file.readline()
     headers = data_line.split (csv_delimiter)
     if col_name not in headers:
         # Quote out the column name, and try again
         col_name = "\"" + col_name + "\""        
         if col_name not in headers:
             raise ValueError ("File does not contain the specified column name")
-    header_pos =   headers.index(col_name)  
+    header_pos = headers.index(col_name)
     
     # May be blank line(s) between the header and the data, so skip these
     data_line = ""
     while (len(data_line) == 0):
-        data_line = data_line = file.readline ()
+        data_line = file.readline()
         data_line = data_line.strip()
         
     # Get the time from the first 2 lines to calculate the step between samples
-    data_line2 = file.readline ()
+    data_line2 = file.readline()
     time1 = int(data_line.split(csv_delimiter)[0])
     time2 = int(data_line2.split(csv_delimiter)[0])
     time_step = time2 - time1
@@ -306,7 +318,7 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
     return worst_case / window_samples
         
 '''
-Function to check the output state of the module and prompt to select an output mode if not set already
+Checks the output state of the module and prompt to select an output mode if not already set.
 '''
 def setupPowerOutput (myModule):
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
@@ -325,5 +337,7 @@ def setupPowerOutput (myModule):
         # Power Up
         print ("\n Turning the outputs on:"), myModule.sendCommand ("run:power up"), "!"
 
+
+# Calling the main() function
 if __name__=="__main__":
     main()
