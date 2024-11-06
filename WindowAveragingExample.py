@@ -240,13 +240,6 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
     else:
         time_step = expected_sample_time
 
-    '''
-    # Check the sample time is what we expect (if it is specified by the user)
-    if (expected_sample_time != -1):
-        if (expected_sample_time != time_step):
-            raise ValueError ("Calculated sample time from the file does not match the specified value")
-    '''
-    
     # Calculate the window size to the nearest number of samples
     window_samples = int(window / time_step)     
     if (window_samples == 0):
