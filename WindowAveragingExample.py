@@ -10,6 +10,7 @@ worst case active power consumption, using a user specified averaging window.
 07/09/2021 - Andy Norrie     - First Version
 20/10/2021 - Andy Norrie     - Significant speed increase by avoiding summing the deque
 28/10/2021 - Andy Norrie     - Added additional parameter options and cross-checks
+17/10/2024 - Graham Seed     - Verified application note working following recent changes
 
 ########### REQUIREMENTS ###########
 
@@ -60,7 +61,7 @@ def main():
     # we may want to capture it now from QIS
     ######################################################
 
-    # Set the path for the CSV file to process
+    # Set the path for the CSV file to process, and the post-processing results file
     data_path = "test_data.csv"
     results_path = "test_results.txt"
 
@@ -110,31 +111,31 @@ def main():
     msg = myQisDevice.sendCommand ("stream mode header v3")
     if (msg != "OK"):
         print ("Failed to set software resampling: " + msg)
-        
-    print ("-Recording data...")
-    
+
     # Start the stream process to the csv file
     myQisDevice.startStream(data_path, 200000, '',separator=",")
     
     # *************************
-    # At this point you can start any workload you require.  For now we will just sleep for the record time required
-    # Set this as you require.  Here we print a simple set of times, to show how long the test has to run
+    # At this point you can start any workload you require.  For now we will just sleep for the record time required.
+    # Set this as you require.  Here we print a simple set of times to show how long the test has to run.
     # *************************        
-    
-    # 2 hour record time
+
+    # 60 second record time
     record_time = 60
-    time_notify = 60 # Update user every 1 minutes
+    time_notify = 10  # Update user every 10 seconds
+    print("-Recording data for " + str(record_time) + " seconds ...")
+
     time_tracker = time_notify
     for x in range(record_time):
         time.sleep(1)
         time_tracker = time_tracker - 1
         if (time_tracker <= 0):
             time_tracker = time_notify
-            print ("Record Minutes Remaining: " + str(math.floor((record_time-x)/60)))
+            print ("Record seconds remaining: " + str(math.floor((record_time-x)/time_notify)*time_notify))
             streamStatus = myQisDevice.streamRunningStatus()
             if ("Stopped" in streamStatus):
                 raise ValueError ("Stream failed during recording period!: " + streamStatus)
-            
+
     # Check the stream status, so we know if anything went wrong during the stream
     streamStatus = myQisDevice.streamRunningStatus()
     if ("Stopped" in streamStatus):
@@ -148,10 +149,11 @@ def main():
     
     print ("-Stopping recording")
     myQisDevice.stopStream()    
-    
-    # check to ensure stream is fully saved all data before continuing the script
+    '''
+    # check to ensure the stream has fully saved all data before continuing the script
     while not "stopped" in str(myQisDevice.streamRunningStatus()).lower():
         time.sleep(1)
+    '''
 
 
     ######################################################
@@ -161,18 +163,21 @@ def main():
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
     print("Start Time: ", current_time)
-    
+
+    # column name to process
+    col_name = "Tot uW"
+
     # Append the results we take to the output file
     with open (results_path, 'a') as out_file:    
         out_file.write("Test Time=" + current_time + "\n")
         # Request the worst case average across the trace.  Time specified in same units as the CSV recording (uS in this case)
         print ("Processing CSV file")
         # 100mS window
-        worst_case = active_power_calc (data_path, col_name="Tot uW", window=100, expected_sample_time=sample_time_us)
+        worst_case = active_power_calc (data_path, col_name, window=100, expected_sample_time=sample_time_us)
         out_file.write("Active power over 100 uS: " + str(worst_case) + "uW\n")
         print ("Active power over 100 uS: " + str(worst_case) + "uW")
         # 1 Second window
-        worst_case = active_power_calc (data_path, col_name="Tot uW", window=1000000, expected_sample_time=sample_time_us)
+        worst_case = active_power_calc (data_path, col_name, window=1000000, expected_sample_time=sample_time_us)
         out_file.write("Active power over 1 Second: " + str(worst_case) + "uW\n")
         print ("Active power over 1 Second: " + str(worst_case) + "uW")
         # Spacing between results
@@ -186,20 +191,19 @@ def main():
 
 '''
 Reads the CSV and calculates a single worst case value for any window of the specified length.
-Return value is in the same units as the colum data.
-Window time is in the same unit as the time column.
+Return value is in the same units as the column data.
+Window time is in the same units as the time column.
 Assumes the first column is the time data.
 
 data_path               = The path of the CSV file to read.
 col_name                = The name of the column containing the data to process.
 window                  = The time span of the averaging window in the same units as the CSV time column.
-csv_delimiter           = The delimiter character used in the CSV.
-max_calc_time           = Optional value for the end time, if you you do not wish to process the whole file.
-expected_sample_time    = Optional value for the expected sample time of the file.  If set then the script will error 
+csv_delimiter           = The delimiter character used in the CSV file.
+max_calc_time           = Optional value for the end time, if you do not wish to process the whole file.
+expected_sample_time    = Optional value for the expected sample time of the file. If set then the script will error 
                           if it does not match the measured value.
 '''
 def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=",",max_calc_time=-1,expected_sample_time=-1):
-    
     worst_case = 0    
     sum_value = 0
     debug_counter = 0
@@ -224,17 +228,24 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
     while (len(data_line) == 0):
         data_line = file.readline()
         data_line = data_line.strip()
-        
-    # Get the time from the first 2 lines to calculate the step between samples
+
+    # read second line
     data_line2 = file.readline()
-    time1 = int(data_line.split(csv_delimiter)[0])
-    time2 = int(data_line2.split(csv_delimiter)[0])
-    time_step = time2 - time1
-    
+
+    # Get the time from the first 2 lines to calculate the step between samples, otherwise use the specified time step
+    if expected_sample_time == -1:
+        time1 = int(data_line.split(csv_delimiter)[0])
+        time2 = int(data_line2.split(csv_delimiter)[0])
+        time_step = time2 - time1
+    else:
+        time_step = expected_sample_time
+
+    '''
     # Check the sample time is what we expect (if it is specified by the user)
     if (expected_sample_time != -1):
         if (expected_sample_time != time_step):
             raise ValueError ("Calculated sample time from the file does not match the specified value")
+    '''
     
     # Calculate the window size to the nearest number of samples
     window_samples = int(window / time_step)     
@@ -251,22 +262,25 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
     # Skip over if the line contains empty data
     if data_line.split(csv_delimiter)[header_pos] != "":
         # Deal with unusual cases that window is 2 samples or less
-        value1 = (int(data_line.split(csv_delimiter)[header_pos]))
-        value2 = (int(data_line2.split(csv_delimiter)[header_pos]))
-        if (window_samples == 2):
-            worst_case = (value1 + value2)
-        elif (window_samples == 1):
-            worst_case = value1
-            if (value2 > worst_case):
-                worst_case = value2
-        # Otherwise push the samples onto the window queue and track the total
-        else:
-            window_sample_data.appendleft (value1)
-            window_sample_data.appendleft (value2)
-            sum_value = value1 + value2
+        line1_col_value = data_line.split(csv_delimiter)[header_pos]
+        line2_col_value = data_line2.split(csv_delimiter)[header_pos]
+        if line1_col_value != "" and line2_col_value != "":
+            value1 = int(line1_col_value)
+            value2 = int(line2_col_value)
+            if (window_samples == 2):
+                worst_case = (value1 + value2)
+            elif (window_samples == 1):
+                worst_case = value1
+                if (value2 > worst_case):
+                    worst_case = value2
+            # Otherwise push the samples onto the window queue and track the total
+            else:
+                window_sample_data.appendleft (value1)
+                window_sample_data.appendleft (value2)
+                sum_value = value1 + value2
     
     # Loop until the file is complete   
-    data_line = data_line = file.readline ()
+    data_line = file.readline ()
     while (data_line is not None):  
         samples_processed = samples_processed + 1
         window_len = len(window_sample_data)
@@ -275,7 +289,6 @@ def active_power_calc (data_path, col_name="Tot uW", window=1000, csv_delimiter=
         # We also subtract this from the sum of all points (this avoids summing the whole window every cycle)
         if (window_len == window_samples):            
             sum_value = sum_value - window_sample_data.pop()
-
 
         # If data element is empty continue to next line
         if data_line.split(csv_delimiter)[header_pos] == "":
