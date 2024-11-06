@@ -114,7 +114,7 @@ def main():
 
     # Start the stream process to the csv file
     myQisDevice.startStream(data_path, 200000, '',separator=",")
-    
+
     # *************************
     # At this point you can start any workload you require.  For now we will just sleep for the record time required.
     # Set this as you require.  Here we print a simple set of times to show how long the test has to run.
@@ -149,12 +149,10 @@ def main():
     
     print ("-Stopping recording")
     myQisDevice.stopStream()    
-    '''
+
     # check to ensure the stream has fully saved all data before continuing the script
     while not "stopped" in str(myQisDevice.streamRunningStatus()).lower():
         time.sleep(1)
-    '''
-
 
     ######################################################
     # Run the averaging process across the existing file
