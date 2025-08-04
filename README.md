@@ -1,8 +1,8 @@
 # AN-033-Multi-device-qps-streaming
 
 ## Overview
-This application note demonstrates a multi-device setup, where 2 Quarch modules can be connected at once in QPS with the data combined in a single analysis
-Multi-device setup allows for measurement of a wider range of channels, or to view both AC and DC sides of a power supply
+This application note demonstrates a multi-device setup, where 2 Quarch modules can be connected at once in QPS with the data combined in a single analysis.
+Multi-device setup allows for measurement of a wider range of channels, or (for example) to view both AC and DC sides of a power supply
 
 ## Features
 - Connecting to two Quarch modules
