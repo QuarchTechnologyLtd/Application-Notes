@@ -131,7 +131,7 @@ def simple_stream_example(module: quarchPPM) -> None:
     # Delay for a few seconds while the stream is running.  You can also continue
     # to run your own commands/scripts here while the stream is recording in the background  
     print ("\nWait a while, for a period of data to record\n")
-    visual_sleep(10, title="1mS Stream test")    # VGives you a visual indication of the delay time
+    visual_sleep(10, title="1mS Stream test")    # Gives you a visual indication of the delay time
     
     # Check the stream status, so we know if anything went wrong during the capture period
     # This is not essential, but some tests may need you to ensure that all data across the
