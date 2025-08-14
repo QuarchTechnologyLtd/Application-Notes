@@ -1,35 +1,28 @@
-'''
+"""
 AN-012 - Application note demonstrating control of power modules via QIS
 
 Automating via QIS is a lower overhead that running QPS (Quarch Power Studio) in full but still
 provides easy access to data for custom processing.  This example uses quarchpy functions to 
 stream data from a quarch power module and dump it into a CSV file.
 
-There are several examples that run in series, these can be commented out if you want to simplify the actions:
+In this example we find and connect to an instrument.  We then record a short period of data
+to file in CSV format.  The stream process is repeated twice, at different averaging rates,
+so you can see the difference in file size and understand how to capture multiple streams in series.
 
-simpleStreamExample() - This example streams data to a csv file
-averageStreamExample() - This example uses software averaging to create a csv file with an exact sample rate
-
-
-QIS is distributed as part of the Quarchpy python package and does not require seperate install
-
-########### VERSION HISTORY ###########
-
-15/10/2018 - Pedro Cruz     - First Version
-12/05/2012 - Matt Holsey    - Bug fixed - check stream is stopped before continuing with script
-25/01/2023 - Andy Norrie    - Updated and reviewed for latest feature set and best practice
+module.startStream() is non-blocking, so you can continue to run your own commands/scripts
+while the stream is recording in the background.  You can also connect to multiple modules
+simultaneously and start them streaming in parallel, each to a different file, with multiple
+calls to module1.startStream(), module2.startStream(), etc.
 
 ########### REQUIREMENTS ###########
 
-1- Python (3.x recommended)
+1- Python 3, a recent version is recommended
     https://www.python.org/downloads/
-2- Java 8, with JaxaFX
-    https://quarch.com/support/faqs/java/
-3- Quarchpy python package
+2- Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
-4- Quarch USB driver (Required for USB connected devices on windows only)
+3- Quarch USB driver (Required for USB connected devices on windows only)
     https://quarch.com/downloads/driver/
-5- Check USB permissions if using Linux:
+4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
 
 ########### INSTRUCTIONS ###########
@@ -38,169 +31,131 @@ QIS is distributed as part of the Quarchpy python package and does not require s
 2. Run the script and follow any instructions on the terminal
 
 ####################################
-'''
+"""
 
 
 # Import other libraries used in the examples
-import time     # Used for sleep commands
-import logging  # Optionally used to create a log to help with debugging
-
+import logging
+import quarchpy
 from quarchpy.device import *
 from quarchpy.qis import *
-from quarchpy.user_interface.user_interface import quarchSleep
-from quarchpy import __version__ as quarchpyVersion
+from quarchpy.user_interface import visual_sleep
 
 def main():
 
-    # If required you can enable python logging, quarchpy supports this and your log file
+    # If required, you can enable python logging, quarchpy supports this, and your log file
     # will show the process of scanning devices and sending the commands.  Just comment out
     # the line below.  This can be useful to send to quarch if you encounter errors
     # logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
 
     print ("\n\nQuarch application note example: AN-012")
     print ("---------------------------------------")
-    print("Using QuarchPy v"+ quarchpyVersion)
+
+    # Validate the version of quarchpy you have installed
+    quarchpy.requiredQuarchpyVersion ("2.0.9")
 
     # Start QIS (if it is already running, skip this step and also avoid closing it at the end)
+    # This is just to be helpful as you may want to run against an already loaded instance of QIS
     print ("Checking for QIS...")
-    closeQisAtEndOfTest=False
-    if isQisRunning() == False:
+    close_qis_at_end_of_test=False
+    if not isQisRunning():
         print("Starting QIS")
         startLocalQis()
-        closeQisAtEndOfTest=True
+        close_qis_at_end_of_test=True
     else:
         print("QIS already running. Using this instance.")
-    # Connect to the localhost QIS instance
-    myQis = QisInterface()
-    print ("QIS Version: " + myQis.sendAndReceiveCmd(cmd='$version')+"\n\n")
 
-    # Ask the user to select a module to use, via the console.
-    myDeviceID = myQis.GetQisModuleSelection(additionalOptions=['Rescan', 'All Con Types', 'Ip Scan','Quit'])
-    if myDeviceID.lower()=="quit":
+    # Connect to the localhost QIS instance and demonstrate a simple command which in this case
+    # returns the QIS version string
+    my_qis = QisInterface()
+    print ("QIS Version: " + my_qis.sendCommand('$version')+"\n\n")
+
+    # Use the module selection helper dialog which prompts the user to select a module to talk to.
+    # We can supply additional options to the dialog, such as 'quit' (which we can handle), the others
+    # are handled internally to give additional options (rescanning after you remember to turn the power on to the
+    # device, for example!)
+    my_device_id = my_qis.GetQisModuleSelection(additionalOptions=['Rescan', 'All Con Types', 'Ip Scan','Quit'])
+    # Exit cleanly on quit request
+    if my_device_id.lower()=="quit":
         print("User Selected Quit.")
-        if closeQisAtEndOfTest:
+        if close_qis_at_end_of_test:
             closeQis()
         return
-    print ("Module Selected: " + myDeviceID + "\n")
-    
-    # If you know the name of the module you would like to talk to then you can skip module selection and hardcode the string.
-    #myDeviceID = "USB:QTL1999-05-005"
 
-    # Connect to the module
-    myQuarchDevice = getQuarchDevice(myDeviceID, ConType = "QIS")
+    # The return from the module selection is a device ID string that we can use to connect to.
+    # If you know the name of the module you would like to talk to, then you can skip module selection and
+    # hardcode the string using the serial number or IP address
+    print ("Module Selected: " + my_device_id + "\n")
+    # my_device_id = "USB:QTL1999-05-005"
+    # my_device_id = "TCP:192168.1.25"
+
+    # Connect to the module, we request a QIS type connection
+    my_quarch_device = getQuarchDevice(my_device_id, ConType = "QIS")
    
     # Convert the base device class to a power device, which provides additional controls, such as data streaming
-    myPowerDevice = quarchPPM(myQuarchDevice)
+    my_power_device = quarchPPM(my_quarch_device)
     
-    # This ensures the latest stream header is used, even for older devices.  This will soon become the default, but is in here for now
-    # as is ensures the output CSV is in the latest format with units added to the row headers.
-    myPowerDevice.sendCommand ("stream mode header v3")
-    
-    # These are optional commands which create additional channels in the output for power (current * voltage) and total power 
-    # (sum of individual power channels).  This can be useful if you don't want to calculate it in post processing
-    myPowerDevice.sendCommand ("stream mode power enable")
-    myPowerDevice.sendCommand ("stream mode power total enable")
-    
-    # Select one or more example functions to run, you can comment any of these out if you do not want to run them
-    simpleStreamExample (myPowerDevice)
-    averageStreamExample (myPowerDevice)
+    # Now we will run an example function to capture stream data from this devices
+    simple_stream_example (my_power_device)
 
-    if closeQisAtEndOfTest==True:
+    if close_qis_at_end_of_test:
         closeQis()
 
-'''
-This example streams measurement data to file, by default in the same folder as the script
-'''
-def simpleStreamExample(module):
+def simple_stream_example(module: quarchPPM) -> None:
+    """
+    This example streams measurement data to file, by default in the same folder as the script
+
+    Args:
+        module:
+            The previously connected Quarch device to stream data from
+
+    Returns:
+        None
+
+    """
     # Prints out connected module information
     print ("Running QIS SIMPLE STREAM Example")
     print ("Module Name: " + module.sendCommand ("hello?"))
 
-    # Sets for a manual record trigger, so we can start the stream from the script
-    print ("Set manual Trigger: " + module.sendCommand ("record:trigger:mode manual"))
-    # Use 4k averaging (around 1 measurement every 32mS)
-    print ("Set averaging: " + module.sendCommand ("record:averaging 32k"))
-    
-    # In this example we write to a fixed path
-    print ("\nStarting Recording!")
-    module.startStream('Stream1.csv')
+    # Go back to default settings, incase this instrument was set to a different state
+    print ("Ensure we are in the default state: " + module.sendCommand ("config:default state"))
 
-    # Delay for 30 seconds while the stream is running.  You can also continue
+    # Setup must be done before starting the stream.  Here we choose our resampling rate
+    print("Setting QIS resampling to 1KHz / 1mS per sample: ")
+    print (module.streamResampleMode("1ms"))
+
+    # In this example we write to a fixed path for simplicity
+    print ("\nStarting Recording!")
+    module.startStream('Stream-1ms.csv')
+
+    # Delay for a few seconds while the stream is running.  You can also continue
     # to run your own commands/scripts here while the stream is recording in the background  
     print ("\nWait a while, for a period of data to record\n")
-    quarchSleep(30)
+    visual_sleep(10, title="1mS Stream test")    # Gives you a visual indication of the delay time
     
     # Check the stream status, so we know if anything went wrong during the capture period
+    # This is not essential, but some tests may need you to ensure that all data across the
+    # full stream period has been captured correctly
     print ("Checking the stream is running (all data has been captured)")
-    streamStatus = module.streamRunningStatus()
-    if ("Stopped" in streamStatus):
-        if ("Overrun" in streamStatus):
-            print ('\tStream interrupted due to internal device buffer has filled up')
-        elif ("User" in streamStatus):
-            print ('\tStream interrupted due to max file size has being exceeded')
-        else:
-            print("\tStopped for unknown reason")
+    stream_status = module.streamRunningStatus()
+    if "running" not in stream_status:
+            print("\tStream terminated early: " + stream_status)
     else:
-        print("\tStream ran correctly")
+        print("\tStream ran correctly across the full test")
 
     # Stop the stream.  This function is blocking and will wait until all remaining data has
-    # been downloaded from the module
+    # been downloaded from the module. This may take a couple of seconds.
     print ("\nStopping the stream...")
-    print(str(module.stopStream()))
+    module.stopStream()
 
+    # Now we will repeat and run a second stream at a different resampling rate.
+    # You can run as many streams in sequence as you like.
+    module.streamResampleMode("100ms")
+    module.startStream('Stream-100ms.csv')
+    visual_sleep(10, title="100mS Stream test")
+    module.stopStream()
 
     print ("\nQIS SIMPLE STREAM Example - Complete!\n\n")
-
-
-
-'''
-This example is identical to the simpleStream() example, except that we use the additional QIS
-averaging system to re-sample the stream to an arbitrary timebase
-'''
-def averageStreamExample(module):
-    # Prints out connected module information
-    print ("Running QIS RESAMPLING Example")
-    print ("Module Name: " + module.sendCommand ("hello?"))
-
-    # Sets for a manual record trigger, so we can start the stream from the script
-    print ("Set manual Trigger: " + module.sendCommand ("record:trigger:mode manual"))
-    # Use 16k averaging as this is a bit faster than we require
-    print ("Set averaging: " + module.sendCommand ("record:averaging 16k"))
-    
-    # SET RESAMPLING HERE
-    # This tells QIS to re-sample the data at a new timebase of 1 samples per second
-    # Software averaging ensures that every sample of data is averaged, ensuring no data is lost
-    print ("Setting QIS resampling to 1000mS")
-    module.streamResampleMode ("1000ms")
-    
-    # In this example we write to a fixed path
-    print ("\nStarting Recording!")
-    module.startStream('Stream1_resampled.csv', '1000', 'Example stream to file with resampling')
-
-    # Delay for 30 seconds while the stream is running.  You can also continue
-    # to run your own commands/scripts here while the stream is recording in the background
-    print ("\nWait a while, for a period of data to record\n")
-    quarchSleep(30)
-    
-    # Check the stream status, so we know if anything went wrong during the capture period
-    print ("Checking the stream is running (all data has been captured)")
-    streamStatus = module.streamRunningStatus()
-    if ("Stopped" in streamStatus):
-        if ("Overrun" in streamStatus):
-            print ('\tStream interrupted due to internal device buffer has filled up')
-        elif ("User" in streamStatus):
-            print ('\tStream interrupted due to max file size has being exceeded')            
-        else:
-            print("\tStopped for unknown reason")
-    else:
-        print("\tStream ran correctly")
-
-    # Stop the stream.  This function is blocking and will wait until all remaining data has
-    # been downloaded from the module
-    print ("\nStopping the stream...")
-    print(str(module.stopStream()))
-
-    print ("\nQIS RESAMPLING Example - Complete!\n\n")
 
 # Calling the main() function
 if __name__=="__main__":
