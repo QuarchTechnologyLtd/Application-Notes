@@ -1,0 +1,47 @@
+name: Release Application Notes
+
+# Trigger the workflow when a tag starting with 'v' is pushed (e.g. v1.0, v2024.01)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # Required to create releases and upload assets
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Zip Individual Application Notes
+      run: |
+        # Create a directory to store the zips
+        mkdir -p release_assets
+        
+        # Navigate to the notes directory
+        cd Application_Notes
+        
+        # Loop through each folder
+        for dir in */; do
+            # Remove trailing slash from dir name
+            dirname=${dir%/}
+            
+            # Zip the folder. 
+            # -r recursively zips
+            # ../release_assets/$dirname.zip is the output
+            # "$dirname" is the input folder
+            echo "Zipping $dirname..."
+            zip -r "../release_assets/${dirname}.zip" "$dirname"
+        done
+
+    - name: Create Release and Upload Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        # This will upload everything in the release_assets folder
+        files: release_assets/*.zip
+        # Optional: Generate release notes automatically based on commits
+        generate_release_notes: true
