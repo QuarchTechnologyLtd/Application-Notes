@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{6b237564-c3e8-42c1-b91c-a02776a971a5}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>SimpleCommandTest.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>{9a7a9026-48c1-4688-9d5d-e5699d47d074}</InterpreterId>
+    <InterpreterVersion>3.5</InterpreterVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+    <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="BasicFunctionTest.py" />
+    <Compile Include="lib\libusb1-1.4.1\examples\hotplug.py" />
+    <Compile Include="lib\libusb1-1.4.1\examples\listdevs.py" />
+    <Compile Include="lib\libusb1-1.4.1\libusb1.py" />
+    <Compile Include="lib\libusb1-1.4.1\setup.py" />
+    <Compile Include="lib\libusb1-1.4.1\testUSB1.py" />
+    <Compile Include="lib\libusb1-1.4.1\usb1.py" />
+    <Compile Include="lib\QuarchLibs\kbhit.py" />
+    <Compile Include="lib\QuarchLibs\QuarchDevice.py" />
+    <Compile Include="lib\QuarchLibs\QuarchFileStream.py" />
+    <Compile Include="lib\QuarchLibs\QuarchImportLibusb.py" />
+    <Compile Include="lib\QuarchLibs\QuarchStream.py" />
+    <Compile Include="lib\QuarchLibs\QuarchStreamWrapper.py" />
+    <Compile Include="lib\QuarchLibs\QuarchTerminalIO.py" />
+    <Compile Include="lib\QuarchLibs\QuarchUSB.py" />
+    <Compile Include="lib\QuarchLibs\QuarchUsbDevice.py" />
+    <Compile Include="lib\QuarchLibs\QuarchUsbDeviceStream.py" />
+    <Compile Include="lib\QuarchLibs\TorridonCommon.py" />
+    <Compile Include="QuarchDumpExample.py" />
+    <Compile Include="QuarchStreamExample.py" />
+    <Compile Include="SimpleCommandTest.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="lib\libusb1-1.4.1\libusb1.egg-info\dependency_links.txt" />
+    <Content Include="lib\libusb1-1.4.1\libusb1.egg-info\SOURCES.txt" />
+    <Content Include="lib\libusb1-1.4.1\libusb1.egg-info\top_level.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="lib\" />
+    <Folder Include="lib\libusb1-1.4.1" />
+    <Folder Include="lib\libusb1-1.4.1\examples" />
+    <Folder Include="lib\libusb1-1.4.1\libusb1.egg-info" />
+    <Folder Include="lib\QuarchLibs" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="{9a7a9026-48c1-4688-9d5d-e5699d47d074}\3.5" />
+  </ItemGroup>
+  <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
+</Project>
