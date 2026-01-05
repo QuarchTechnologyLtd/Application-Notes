@@ -1,0 +1,11 @@
+[global]
+directory=C\:\Temp
+rw=randread
+size=128m
+runtime=20
+bs=16k
+time_based
+
+[16kRead]
+
+
