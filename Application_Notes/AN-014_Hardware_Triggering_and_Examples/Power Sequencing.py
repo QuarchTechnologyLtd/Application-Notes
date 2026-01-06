@@ -12,14 +12,13 @@ This uses the quarchpy python package and demonstrates
 
 The commands sent to the device are in the format
 RUN:POWer UP
-
 The commands are based on SCPI control system, but not all SCPI has been implemented
 Commands are not case-sensitive. Most commands will have short forms - e.g. POWer shortens to POW
 
 
 ########### VERSION HISTORY ###########
 
-06/01/2025 - operation review, and changes made
+06/01/2025 -  Andrew S - operation review, and changes made
 
 ########### REQUIREMENTS ###########
 
@@ -64,27 +63,27 @@ from quarchpy.qps import *
 from quarchpy.user_interface import *
 
 #Local file where the python script is stored
-baseDirectory = str(os.path.dirname(os.path.realpath(__file__)))
+base_directory = str(os.path.dirname(os.path.realpath(__file__)))
 
 #Names a folder for output of script to go
-dataFolderName = "PowerSequencingOutputs"
+data_folder_name = "PowerSequencingOutputs"
 
 #Specifies datapath in the local folder where script is stored
-dataPath = os.path.join(baseDirectory, dataFolderName)
+data_path = os.path.join(base_directory, data_folder_name)
 
 #Creates the directory for output data
-os.makedirs(dataPath, exist_ok=True)
+os.makedirs(data_path, exist_ok=True)
 
 #StreamPath is where the QPS Trace is stored.
 #Stored within the local folder
-streamPath = os.path.join(dataPath, "QPS Trace")
+stream_path = os.path.join(data_path, "QPS Trace")
 
 #Log file path is used for logging
 #E.G. logFile_25-12-03-12-00-00.txt
-logFilePath = os.path.join(dataPath, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S",time.gmtime())+" .txt")
+log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime()) + " .txt")
 
 #Leaves only numeric characters, strips all non-numeric characters
-regexpattern = r"\D+"
+REGEX_PATTERN = r"\D+"
 
 def main():
     #Starts logging - Filename is the time
@@ -128,15 +127,16 @@ def main():
     breaker_device.send_command("RUN:POWer down")
     log_write("Breaker powered down")
 
+    #Configure what power rail the breaker is triggered off
     user_select_power_rail_trig(breaker_device)
-    log_write("Power rail trigger selected")
 
     #Calls the user selected delay function
     print("Please enter the delays in ms for the power up sequence")
+
     delay1_up, delay2_up, delay3_up = user_select_delays()
     log_write("Power up delays selected: "+ delay1_up +"ms " + delay2_up +"ms " + delay3_up+"ms")
 
-    print("Please enter the delays in ms for the power down sequence")
+    print("\nPlease enter the delays in ms for the power down sequence")
     delay1_down, delay2_down, delay3_down = user_select_delays()
     log_write("Power down delays selected: " + delay1_down + "ms " + delay2_down + "ms " + delay3_down + "ms")
 
@@ -157,24 +157,24 @@ def main():
         startLocalQps(keepQisRunning=True)
 
     # Open an interface to local QPS - used for communicating with it
-    myQps = qpsInterface()
+    my_qps = qpsInterface()
     log_write("QPS Interface opened")
 
     print("\n-Requesting PAM selection")
     #Asks user to select the PAM to be used
-    myDeviceID = GetQpsModuleSelection(myQps)
+    my_device_id = GetQpsModuleSelection(my_qps)
     log_write("Requesting PAM selection")
 
     # Create a Quarch device connected via QPS
-    myQuarchDevice = get_quarch_device(myDeviceID, ConType="QPS")
+    my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
     log_write("PAM connected")
 
     # Upgrade Quarch device to QPS device
-    pam_device = quarchQPS(myQuarchDevice)
+    pam_device = quarchQPS(my_quarch_device)
     log_write("Quarch device upgraded to QPS device")
 
     #Opens connection to the PAM
-    pam_device.openConnection()
+    pam_device.open_connection()
     log_write("PAM connection opened")
 
     #Logs the PAM identity
@@ -185,10 +185,10 @@ def main():
     pam_device.send_command("RUN:POWer up")
 
     # Creates the stream folder, named YY-MM-DD_HH_MM_SS
-    fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
+    file_name = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
 
     #Started the stream
-    myStream = pam_device.start_stream(streamPath + "\\" + fileName)
+    my_stream = pam_device.start_stream(stream_path + "\\" + file_name)
     log_write("Stream started")
 
     #Opens connection to the breaker
@@ -202,7 +202,7 @@ def main():
     time.sleep(5)
 
     #Breaker configured for power down - delays of 100ms, 75ms and 50ms
-    breaker_config_sequence(myQuarchDevice, delay1_down, delay2_down, delay3_down)
+    breaker_config_sequence(my_quarch_device, delay1_down, delay2_down, delay3_down)
     log_write("Breaker power down configured")
 
     #Waits 1s before running the pattern
@@ -213,7 +213,7 @@ def main():
     time.sleep(5)
 
     #Stops streaming
-    myStream.stopStream()
+    my_stream.stop_stream()
     log_write("Stream completed")
 
     #Close connection to the breaker and PAM - streaming finished
@@ -237,20 +237,20 @@ def user_select_delays():
     """
     print("Please enter the delay for the 12V rail in ms")
     delay1_input = str(input("Delay 1: "))
-    delay1 = re.sub(regexpattern, '', delay1_input)
+    delay1 = re.sub(REGEX_PATTERN, '', delay1_input)
 
     print("Please enter the delay for the 3V3 rail in ms")
     delay2_input = str(input("Delay 2: "))
-    delay2 = re.sub(regexpattern, '', delay2_input)
+    delay2 = re.sub(REGEX_PATTERN, '', delay2_input)
 
     print("Please enter the delay for the 3V3_AUX rail in ms")
     delay3_input = str(input("Delay 3: "))
-    delay3 = re.sub(regexpattern, '', delay3_input)
+    delay3 = re.sub(REGEX_PATTERN, '', delay3_input)
 
     print("\nDelays selected are")
     print("12V delay :" + delay1 + "ms")
     print("3V3 delay :" + delay2 + "ms")
-    print("3V3_AUX delay :" + delay3 + "ms")
+    print("3V3_AUX delay :" + delay3 + "ms\n")
 
     return [delay1,delay2,delay3]
 
@@ -268,9 +268,6 @@ def breaker_config_sequence(my_breaker, delay1, delay2, delay3):
     :param delay3: The delay in milliseconds to be assigned to 3V3_AUX
     :return None:
     """
-
-    #Configure what power rail the breaker is triggered off
-    user_select_power_rail_trig(my_breaker)
 
     my_breaker.open_connection()
     #Delays are in milliseconds
@@ -292,14 +289,16 @@ def user_select_power_rail_trig(my_breaker):
     :param my_breaker: The breaker that is used.
     :return power_rail_trig: The rail to trigger breaker signals from
     """
+
+    print("Please select the power rail to trigger the breaker from")
     #PCIe based drives, so 12V, 3V3 and 3V3 Aux power rails
-    powerRailOptions = ["12V", "3V3"]
+    power_rail_options = ["12V", "3V3"]
     #Asks the user to select an option for the power rail to trigger from
-    power_rail_trig = listSelection(title="Power rail to trigger from", selectionList=powerRailOptions, nice=True)
+    power_rail_trig = listSelection(title="Power rail to trigger from", selectionList=power_rail_options, nice=True)
     #Assign power_rail_trig to the rail
-    #power_rail_trig = powerRailOptions[power_rail_index]
+    #power_rail_trig = power_rail_options[power_rail_index]
     #3v3_host or 12v_host
-    my_breaker.sendCommand("TRIGger:OUT:MODE " + power_rail_trig + "_host")
+    my_breaker.send_command("TRIGger:OUT:MODE " + power_rail_trig + "_host")
 
 def log_write(log_string):
     """"
@@ -310,8 +309,8 @@ def log_write(log_string):
     :return: None
     """
     #Writes the string log_string to log file and prints new line
-    with open(logFilePath, "a") as logFile:
-        logFile.write(log_string + "\n")
+    with open(log_file_path, "a") as log_file:
+        log_file.write(log_string + "\n")
 
 # Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":

@@ -10,7 +10,7 @@ This uses the quarchpy python package and demonstrates
 
 ########### VERSION HISTORY ###########
 
-18/11/2025 - Andrew Steedman - Branched from Power Sequencing
+06/01/2025 - Andrew S - operation review, and changes made
 
 ########### REQUIREMENTS ###########
 
@@ -24,16 +24,13 @@ This uses the quarchpy python package and demonstrates
     https://quarch.com/support/faqs/usb/
 5- If using Windows 11 install WMIC
     Windows Settings > Search "WMIC" and install
+6- If using Linux install LS SCSI and SmartCTL
 
-If using Linux
-
-LSSCSI
-SmartCTL
 
 ########### INSTRUCTIONS ###########
 
 1- Install the required items above
-2- Connect Power Injection Fixture
+2- Connect Power Injection Fixture, and the drive
 3- Connect PPM to control PC
 4- Connect Power cables to PPM
 5- Run the script and follow the instructions on screen
@@ -51,7 +48,7 @@ import logging  # Optionally used to create a log to help with debugging
 import re
 
 #Used to only get digits of the output of ppm meas volt 12v/3v3?
-REGEXPATTERN = r"\D+"
+REGEX_PATTERN = r"\D+"
 
 # Import the necessary components from the quarchpy library
 #from quarchpy.connection_specific.connection_QIS import QisInterface
@@ -65,27 +62,27 @@ from QuarchpyQCS.hostInformation import HostInformation
 from QuarchpyQCS.Drive_wrapper import  *
 
 #Local file where the python script is stored
-baseDirectory = str(os.path.dirname(os.path.realpath(__file__)))
+base_directory = str(os.path.dirname(os.path.realpath(__file__)))
 
 #Names a folder for output of script to go
-dataFolderName = "VoltageMarginingOutputs"
+data_folder_name = "VoltageMarginingOutputs"
 
 #Specifies datapath in the local folder where script is stored
-dataPath = os.path.join(baseDirectory, dataFolderName)
+data_path = os.path.join(base_directory, data_folder_name)
 
 #Creates the directory for output data
-os.makedirs(dataPath, exist_ok=True)
+os.makedirs(data_path, exist_ok=True)
 
-#StreamPath is where the QPS Trace is stored
+#StreamPath is where the QPS Trace is stored.
 #Stored within the local folder
-streamPath = os.path.join(dataPath, "QPS Trace")
+stream_path = os.path.join(data_path, "QPS Trace")
 
 #Log file path is used for logging
 #E.G. logFile_25-12-03-12-00-00.txt
-logFilePath = os.path.join(dataPath, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S",time.gmtime())+" .txt")
+log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime()) + " .txt")
 
 #Reference to hostInformation class for drive detection functionality
-myHostInfo = HostInformation()
+my_host_info = HostInformation()
 
 
 
@@ -113,120 +110,116 @@ def main():
         log_write("QPS Already running")
 
     # Open an interface to local QPS
-    myQps = qpsInterface()
+    my_qps = qpsInterface()
 
     # Module to work with
     print("\n-Requesting PPM selection")
-    myDeviceID = GetQpsModuleSelection(myQps)
+    my_device_id = GetQpsModuleSelection(my_qps)
     log_write("User selected PPM")
 
     # Create a Quarch device connected via QPS
-    myQuarchDevice = getQuarchDevice(myDeviceID, ConType="QPS")
+    my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
     log_write("PPM connected to QPS\n")
 
     #Powers on PIF so drive can be detected
-    myQuarchDevice.sendCommand("run power up")
+    my_quarch_device.send_command("RUN:POWer UP")
 
     #Drive Connection
     #Uses QCS class to retrieve list of all drives
-    wrappedDriveList = myHostInfo.return_wrapped_drives()
+    wrapped_drive_list = my_host_info.return_wrapped_drives()
     log_write("Drive list retrieved")
 
     #Calls function to format the list into a readable view
-    formattedDriveList = format_drive_list(wrappedDriveList)
+    formatted_drive_list = format_drive_list(wrapped_drive_list)
 
-    #Creates an object of DriveWrapper in preparation
-    #selectedDrive = DriveWrapper()
-
-    selectedDrive = None
+    selected_drive = None
     #Runs until user selects a drive or hits rescan
-    while selectedDrive is None or selectedDrive in "Rescan":
+    while selected_drive is None or selected_drive in "Rescan":
         #Gets the input from the user, adds a few tidied up options
-        selectedDrive = listSelection(selectionList=formattedDriveList, nice=True,
+        selected_drive = listSelection(selectionList=formatted_drive_list, nice=True,
                                       additionalOptions=["Rescan", "Quit"], tableHeaders=["Drive"], align="c")
 
-        listOfDrives = myHostInfo.return_wrapped_drives()
-        formattedDriveList = format_drive_list(wrappedDriveList)
+        #listOfDrives = my_host_info.return_wrapped_drives()
+        formatted_drive_list = format_drive_list(wrapped_drive_list)
 
     log_write("Drive selected")
 
     #Removes unnecessary info
-    selectedDrive = selectedDrive.split(":-")
+    selected_drive = selected_drive.split(":-")
 
     #Returns DriveWrapper object
-    myDrive = myHostInfo.get_wrapped_drive_from_choice(selectedDrive[0])
-    print("Drive Selected is :", selectedDrive[0])
+    my_drive = my_host_info.get_wrapped_drive_from_choice(selected_drive[0])
+    print("Drive Selected is :", selected_drive[0])
 
     #Boolean dependent on whether the selected drive is present
-    drivePresence = poll_drive(myDrive)
+    drive_presence = poll_drive(my_drive)
 
     # Upgrade Quarch device to QPS device
-    myQpsDevice = quarchQPS(myQuarchDevice)
-    myQpsDevice.openConnection()
+    my_qps_device = quarchQPS(my_quarch_device)
+    my_qps_device.open_connection()
     log_write("Upgraded Quarch device to QPS device")
 
     #Returns the name of the PPM module
-    print(myQpsDevice.sendCommand("*idn?"))
-    log_write(myQpsDevice.sendCommand("*idn?"))
+    print(my_qps_device.send_command("*IDN?"))
+    log_write(my_qps_device.send_command("*IDN?"))
 
     #Checks if 3V3 or 5V - Fixture_3V3 is true if 3V3, False if 5V
-    conf_out = myQpsDevice.sendCommand("conf out mode?")
+    conf_out = my_qps_device.send_command("CONFig:OUTput:MODE?")
     if conf_out == "3V3":
         fixture_3v3 = True
     elif conf_out =="5V":
         fixture_3v3 = False
     else:
         print("Please manually set the output configuration. Look at line 180 in the script")
+        fixture_3v3 = None
+
         #If using a 3V3 dumb fixture, uncomment below two lines
-        #myQpsDevice.sendCommand("conf out mode 3V3")
+        #my_qps_device.sendCommand("conf out mode 3V3")
         #fixture_3v3 = True
 
         #If using a 5V dumb fixture, uncomment below two lines
-        #myQpsDevice.sendCommand("conf out mode 5V")
+        #my_qps_device.sendCommand("conf out mode 5V")
         #fixture_3v3 = False
 
     #Change the resampling rate to 100us - adjust with testing.
-    myQpsDevice.sendCommand("stream mode resample 100us")
+    my_qps_device.send_command("stream mode resample 100us")
 
     #Enables pull down resistor on 5V/3V3 channel - reduces floating
-    myQpsDevice.sendCommand("conf out 5v pull on")
-    log_write("Pulldown resistor enabled")
-
-
-    #==Voltage Margining
+    my_qps_device.send_command("CONFig:OUT:5v:PULLdown ON")
+    log_write("Pull-down resistor enabled")
 
     #Powers up PPM
-    myQpsDevice.sendCommand("run power up")
+    my_qps_device.send_command("RUN:POWer UP")
     log_write("PPM Powered Up")
 
     #Creates filename for QPS stream to be stored - year month day, hours minutes seconds
-    fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
+    file_name = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
 
     #Creates stream object and starts streaming
-    myStream = myQpsDevice.startStream(streamPath + "\\" + fileName)
+    my_stream = my_qps_device.start_stream(stream_path + "\\" + file_name)
 
     #Create a synthetic channel for drive presence
-    myStream.createChannel("DrivePresence", "Digital", "", False)
+    my_stream.create_channel("DrivePresence", "Digital", "", False)
     log_write("Drive Presence channel added")
-    myStream.addDataPoint("DrivePresence", "Digital", drivePresence)
+    my_stream.add_data_point("DrivePresence", "Digital", drive_presence)
 
     log_write("Stream started")
 
     #Sets the voltage channels to nominal
-    reset12vnominal(myQpsDevice)
-    reset_3v3_5v_nominal(myQpsDevice,fixture_3v3)
+    reset12v_nominal(my_qps_device)
+    reset_3v3_5v_nominal(my_qps_device,fixture_3v3)
 
     print("Margining 12V rail")
 
     #Load 12V Pattern
-    ppm12vlower(myQpsDevice)
+    ppm12v_lower(my_qps_device)
     log_write("12V Pattern loaded")
 
     #Gets the voltage on the 12v channel in mv
-    #returned in the format xxxxx mV as a string
+    #returned in the format xxxx mV as a string
     #REGEXPATTERN removes any non-numeric character, and is typecast to an integer
-    volt12v = myQpsDevice.sendCommand("meas volt 12v?")
-    volt12vint = int(re.sub(REGEXPATTERN, '', volt12v))
+    volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
+    volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
 
 
     #Creates variables used to store the voltage level when drive browns out
@@ -234,27 +227,27 @@ def main():
     brownout_3v3_5v = 0
 
     # Run 12V pattern
-    myQpsDevice.sendCommand("run pat")
-    myStream.addAnnotation("12V Ramp Down Start")
+    my_qps_device.send_command("RUN:PATtern")
+    my_stream.add_annotation("12V Ramp Down Start")
     log_write("Running Pattern")
 
     #While 12V rail is more than 150mV - often noise at ground, and drive is detected
-    while volt12vint > 150 and drivePresence == True:
+    while volt12vint > 150 and drive_presence == True:
         #Polls drive
-        drivePresence = poll_drive(myDrive)
+        drive_presence = poll_drive(my_drive)
 
-        volt12v = myQpsDevice.sendCommand("meas volt 12v?")
-        volt12vint = int(re.sub(REGEXPATTERN, '', volt12v))
+        volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
+        volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
 
-        if not drivePresence:
+        if not drive_presence:
             print("\nDrive no longer detected - brownout occurred when the 12V rail was " + volt12v)
             brownout_12v = volt12vint
-            myStream.addAnnotation("Drive Brownout")
+            my_stream.add_annotation("Drive Brownout")
 
     log_write("12V Brownout at " + str(brownout_12v) + "mV")
     log_write("12V Margining complete\n")
 
-    reset12vnominal(myQpsDevice)
+    reset12v_nominal(my_qps_device)
 
     print("12V Margining complete, rail reset, margining 3V3/5V")
 
@@ -263,32 +256,31 @@ def main():
     time.sleep(10)
 
     #Load 3V3 pattern
-    ppm_3v3_5v_lower(myQpsDevice, fixture_3v3)
+    ppm_3v3_5v_lower(my_qps_device, fixture_3v3)
     log_write("3V3/5V Pattern loaded")
 
-    volt_3v3_5v = myQpsDevice.sendCommand("meas volt 3v3?")
-    volt_3v3_5v_int = int(re.sub(REGEXPATTERN, '', volt_3v3_5v))
+    volt_3v3_5v = my_qps_device.send_command("MEASure:VOLTage 3v3?")
+    volt_3v3_5v_int = int(re.sub(REGEX_PATTERN, '', volt_3v3_5v))
 
     #Run Pattern
-    myQpsDevice.sendCommand("run pat")
+    my_qps_device.send_command("RUN:PATtern")
     log_write("Running Pattern")
-    myStream.addAnnotation("3V3/5V Ramp Down Start")
+    my_stream.add_annotation("3V3/5V Ramp Down Start")
 
-    while volt_3v3_5v_int > 150 and drivePresence == True:
+    while volt_3v3_5v_int > 150 and drive_presence == True:
         #Polls drive
-        drivePresence = poll_drive(myDrive)
+        drive_presence = poll_drive(my_drive)
 
-        volt_3v3_5v = myQpsDevice.sendCommand("meas volt 3v3?")
-        volt_3v3_5v_int = int(re.sub(REGEXPATTERN, '', volt_3v3_5v))
+        volt_3v3_5v = my_qps_device.send_command("MEASure:VOLTage 3v3?")
+        volt_3v3_5v_int = int(re.sub(REGEX_PATTERN, '', volt_3v3_5v))
 
-        if not drivePresence:
+        if not drive_presence:
             if fixture_3v3:
                 print("\nDrive no longer detected - brownout occurred when the 3V3 rail was " + volt_3v3_5v)
             elif not fixture_3v3:
                 print("\nDrive no longer detected - brownout occurred when the 5V rail was " + volt_3v3_5v)
             brownout_3v3_5v = volt_3v3_5v_int
-            myStream.addAnnotation("Drive Brownout")
-
+            my_stream.add_annotation("Drive Brownout")
 
     log_write("3V3/5V Brownout at " + str(brownout_3v3_5v) + "mV")
     log_write("3V3 Margining complete\n")
@@ -298,16 +290,16 @@ def main():
     time.sleep(1)
 
     #Reset rails back to nominal
-    reset_3v3_5v_nominal(myQpsDevice, fixture_3v3)
-    reset12vnominal(myQpsDevice)
+    reset_3v3_5v_nominal(my_qps_device, fixture_3v3)
+    reset12v_nominal(my_qps_device)
 
     time.sleep(2)
-    myStream.stopStream()
+    my_stream.stop_stream()
     log_write("Stream stopped")
 
     # Close the module before we go round the loop to try another test
     # The module should always be closed when you are finished using it
-    myQpsDevice.closeConnection()
+    my_qps_device.close_connection()
     log_write("Closed connection, test complete")
 
     print_results(brownout_12v, brownout_3v3_5v, fixture_3v3)
@@ -323,7 +315,7 @@ def log_write(log_string):
     :return: None
     """
     #Writes the string log_string to log file and prints new line
-    with open(logFilePath, "a") as logFile:
+    with open(log_file_path, "a") as logFile:
         logFile.write(log_string + "\n")
 
 #Checking if user is admin
@@ -355,7 +347,7 @@ def admin_os_check():
     elif os.name == "posix":
         log_write("OS: Linux")
 
-        #Checks if LSSCSI is installed - Lists SCSI devices in the command-line
+        #Checks if LS SCSI is installed - Lists SCSI devices in the command-line
         check_lsscsi_installation()
 
         #Checks if SmartCTL is installed - On-drive Self-Monitoring, Analysis, Reporting Technology System
@@ -450,7 +442,7 @@ def poll_drive(wrapped_device):
     drive_type = wrapped_device.drive_type
 
     #Returns a list of wrapped drives
-    device_list = myHostInfo.return_wrapped_drives(drive_type)
+    device_list = my_host_info.return_wrapped_drives(drive_type)
 
     for item in device_list:
         #Double check as switches may have same identifier but different description
@@ -461,26 +453,26 @@ def poll_drive(wrapped_device):
     return False
 
 
-def reset12vnominal(my_ppm):
+def reset12v_nominal(my_ppm):
     """
     Clears any pattern and sets 12V channel to 12V
     :param my_ppm: PPM used in test
     :return: None
     """
-    my_ppm.sendCommand("sig 12v pat clear")
-    my_ppm.sendCommand("sig 12v volt 12000")
+    my_ppm.send_command("SIGnal:12v:PATtern CLEAR")
+    my_ppm.send_command("SIGnal:12v:VOLTage 12000")
 
 #Creates pattern with 12V on lower limit
-def ppm12vlower(my_ppm):
+def ppm12v_lower(my_ppm):
     """
     Resets the 12V channel, then creates a pattern for 12V to ramp down to 0 over 500ms
     :param my_ppm: PPM used in test
     :return: None
     """
-    reset12vnominal(my_ppm)
+    reset12v_nominal(my_ppm)
 
     #Pattern to ramp down -12V down to 0 over 100ms
-    my_ppm.sendCommand("sig 12v pat add 5s -12000 i")
+    my_ppm.send_command("SIGnal:12v:PATtern ADD 5s -12000 i")
 
 #Clears any pattern and sets 3V3/5V channel to 3V3/5V
 def reset_3v3_5v_nominal(my_ppm,fixture_3v3):
@@ -492,12 +484,12 @@ def reset_3v3_5v_nominal(my_ppm,fixture_3v3):
     """
     #If fixture_3v3 is true, it is a 3v3 fixture
     if fixture_3v3:
-        my_ppm.sendCommand("sig 3v3 pat clear")
-        my_ppm.sendCommand("sig 3v3 volt 3300")
+        my_ppm.send_command("SIGnal:3v3:PAT CLEAR")
+        my_ppm.send_command("SIGnal:3v3:VOLTage 3300")
     #If fixture_3v3 is false it is a 5V fixture
     elif not fixture_3v3:
-        my_ppm.sendCommand("sig 5v pat clear")
-        my_ppm.sendCommand("sig 5v volt 5000")
+        my_ppm.send_command("SIGnal:5v:PATtern CLEAR")
+        my_ppm.send_command("SIGnal:5v:VOLTage 5000")
 
 #Creates pattern with 3V3/5V ramping down to 0V
 def ppm_3v3_5v_lower(my_ppm,fixture_3v3):
@@ -511,10 +503,10 @@ def ppm_3v3_5v_lower(my_ppm,fixture_3v3):
     reset_3v3_5v_nominal(my_ppm,fixture_3v3)
     #Ramps down 3V3 to 0V over 200ms
     if fixture_3v3:
-        my_ppm.sendCommand("sig 3v3 pat add 5s -3300 i")
+        my_ppm.sendCommand("SIGnal:3v3:PATtern ADD 5s -3300 i")
     #Ramps down 5V over 200ms
     elif not fixture_3v3:
-        my_ppm.sendCommand("sig 5v pat add 5s -5000 i")
+        my_ppm.sendCommand("SIGnal:5v:PATtern ADD 5s -5000 i")
 
 #Shows drive identifier and drive description for each drive found
 #Otherwise just drive addresses
@@ -523,17 +515,17 @@ def format_drive_list(wrapped_drive_list):
     Tidies up drive list into a readable format showing drive identifier and description
 
     :param wrapped_drive_list: Drive list to be formatted
-    :return formattedDriveList: List of drives that have been formatted
+    :return formatted_drive_list: List of drives that have been formatted
     """
     #Creates empty list for drives that have already been formatted
-    formattedDriveList = []
+    formatted_drive_list = []
 
     #For each drive found
     for drive in wrapped_drive_list:
         #Show only drive identifier and description
-        formattedDriveList.append("{0} :- {1}".format(drive.identifier_str, drive.description))
+        formatted_drive_list.append("{0} :- {1}".format(drive.identifier_str, drive.description))
     #Returns the formatted drive list
-    return formattedDriveList
+    return formatted_drive_list
 
 def print_results(level_12v_brownout, level_3v3_5v_brownout,fixture_3v3):
     """
@@ -578,8 +570,8 @@ def exit_script(my_device, err=None):
     :param my_device: quarchDevice obj - Module wrapper for selected module.
     :param err : String (optional) - Display an error to user before exiting the script.
     """
-    my_device.sendCommand("Conf def state")
-    my_device.closeConnection()
+    my_device.send_command("CONFig:DEFault STATE")
+    my_device.close_connection()
     if err:
         logging.error(err)
     quit()
