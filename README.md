@@ -1,6 +1,6 @@
 # Quarch Technology Application Notes Repository
 
-Welcome to the Quarch Technology QuarchPy Application Notes repository. Here you will find a collection of application notes that demonstrate how to use Quarch hardware and software, automate workflows, and access advanced testing examples.
+Welcome to the Quarch Technology Application Notes repository. Here you will find a collection of application notes that demonstrate how to use Quarch hardware and software, automate workflows, and access advanced testing examples.
 
 Each application note covers a specific topic, and includes code samples, configuration guides, and step-by-step instructions.
 
