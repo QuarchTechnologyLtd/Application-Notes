@@ -1,4 +1,4 @@
-# Application Notes Repository
+# QuarchPy Application Notes Repository
 
 Welcome to the Quarch Technology QuarchPy Application Notes repository. Here you will find a collection of application notes that demonstrate how to use Quarch hardware and software, automate workflows, and access advanced testing examples.
 
@@ -40,6 +40,16 @@ Each application note covers a specific topic, and includes code samples, config
 ## Usage
 
 Each folder contains all necessary files for its subject, including code samples and guidance. Browse the folders for PDFs, scripts, or markdown notes as needed. See each application note for prerequisites and usage instructions specific to your Quarch hardware or automation workflow.
+
+## Contributing
+
+Thank you for your interest in Quarch Application Notes.
+
+Please note that **we do not accept Pull Requests** for this repository.
+
+However, we welcome your feedback! If you find a bug, have a feature request, or need assistance:
+* **Open an Issue:** Please [submit an issue](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/issues) on GitHub.
+* **Contact Support:** You can contact us directly via our support email (`support@quarch.com`).
 
 ## License
 
