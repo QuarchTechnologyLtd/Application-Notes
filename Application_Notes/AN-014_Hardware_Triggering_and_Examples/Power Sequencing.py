@@ -1,5 +1,6 @@
 """
 AN-014 - Application note demonstration of power sequencing using a breaker and PAM
+The PAM is used to verify that the operation is working as intended
 
 This uses the quarchpy python package and demonstrates
 - Scanning for modules
@@ -14,7 +15,6 @@ The commands sent to the device are in the format
 RUN:POWer UP
 The commands are based on SCPI control system, but not all SCPI has been implemented
 Commands are not case-sensitive. Most commands will have short forms - e.g. POWer shortens to POW
-
 
 ########### VERSION HISTORY ###########
 
@@ -42,7 +42,10 @@ Commands are not case-sensitive. Most commands will have short forms - e.g. POWe
 
 ####################################
 
-This script uses both a breaker and a PAM. This script is to check whether a PCIe based drive meets the PCIe CEM spec,
+This script was written and tested using a QTL2910 AIC PAM Fixture, and a QTL2358 AIC Breaker,
+with a Host Card as the PCIe device
+
+This script uses both a breaker and a PAM. This script is to check whether a PCIe based device meets the PCIe CEM spec,
 in regard to power sequencing
 Section 4.4 of the PCIe CEM specification states
 
@@ -54,7 +57,7 @@ delivered by the system board or cables. They may come up or go down in any orde
 import os
 import time     # Used for sleep commands to add delays
 import logging  # Used for logging - mainly for debugging but log file is created automatically
-import re #REGEX, used for stripping and validating inputs
+import re       #REGEX, used for stripping and validating inputs
 
 #Imports Quarchpy, and the device and QPS part
 import quarchpy
@@ -79,15 +82,16 @@ os.makedirs(data_path, exist_ok=True)
 stream_path = os.path.join(data_path, "QPS Trace")
 
 #Log file path is used for logging
-#E.G. logFile_25-12-03-12-00-00.txt
-log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime()) + " .txt")
+#Explicitly stated to be in same path as the python script
+#File name is logFile_YYYY-MM-DD-HH-mm-SS.txt, in localtime
+log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()) + " .txt")
 
 #Leaves only numeric characters, strips all non-numeric characters
 REGEX_PATTERN = r"\D+"
 
 def main():
-    #Starts logging - Filename is the time
-    logging.basicConfig(filename="output.log", level=logging.DEBUG,
+    #Starts logging - Has both QIS logs, and script logs
+    logging.basicConfig(filename=log_file_path, level=logging.DEBUG,
                         format="[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s",
                         datefmt="%H:%M:%S")
 
@@ -124,7 +128,7 @@ def main():
     log_write("Breaker set to default state")
 
     #Powers down the breaker
-    breaker_device.send_command("RUN:POWer down")
+    breaker_device.send_command("RUN:POWer DOWN")
     log_write("Breaker powered down")
 
     #Configure what power rail the breaker is triggered off
@@ -181,6 +185,10 @@ def main():
     log_write("Connected to PAM. PAM identity:")
     log_write(pam_device.send_command("*idn?"))
 
+    #Averaging window of 4us for digital signals
+    #Check default stream rate
+    #pam_device.send_command("RECord:AVEraging:GROup 1 8")
+
     #Powers the pam up
     pam_device.send_command("RUN:POWer up")
 
@@ -223,8 +231,20 @@ def main():
     log_write("PAM connection closed")
 
     #Test finished
-    print("Test finished,try changing the delays, and the power rail that is triggered off")
+    print("Test completed")
+    print("Change the delays, and the power rail that is triggered off, and check if the spec is met")
+
+    print("\nThe PCI Express Card Electromechanical Specification, Revision 6, Section 4.4 states")
+    print("\nThere is no specific requirement for power supply sequencing of the power supply rails, whether")
+    print("delivered by the system board or cables. They may come up or go down in any order. ")
+
+    print("Change the order of the power rails going up, and see if the device still comes online")
+
     log_write("Test completed")
+
+    exit_script(pam_device, breaker_device, None)
+    log_write("Exiting script")
+
     return None
 
 def user_select_delays():
@@ -311,6 +331,25 @@ def log_write(log_string):
     #Writes the string log_string to log file and prints new line
     with open(log_file_path, "a") as log_file:
         log_file.write(log_string + "\n")
+
+#Exits script cleanly, and closes the connection to the device
+def exit_script(my_device1, my_device2, err=None):
+    """
+    Exit script cleanly, ensuring module is reset to default state
+    and no connection to module is left open.
+    #Script makes use of 2 modules, hence has 2 devices as parameters
+
+    :param my_device1: quarchDevice obj - Module wrapper for selected module.
+    :param my_device2: quarchDevice obj - Module wrapper for selected module.
+    :param err : String (optional) - Display an error to user before exiting the script.
+    """
+    my_device1.send_command("CONFig:DEFault STATE")
+    my_device1.close_connection()
+    my_device2.send_command("CONFig:DEFault STATE")
+    my_device2.close_connection()
+    if err:
+        logging.error(err)
+    quit()
 
 # Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":

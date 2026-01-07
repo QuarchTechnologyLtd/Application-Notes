@@ -18,6 +18,8 @@ This uses the quarchpy python package and demonstrates
     https://www.python.org/downloads/
 2- Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
+3- QuarchQCS Python package - No licence needed, using library funcs
+    https://pypi.org/project/quarchqcs/
 3- Quarch USB driver (Required for USB connected devices on windows only)
     https://quarch.com/downloads/driver/
 4- Check USB permissions if using Linux:
@@ -45,7 +47,7 @@ import subprocess
 import datetime
 import time     # Used for sleep commands to add delays
 import logging  # Optionally used to create a log to help with debugging
-import re
+import re          #Used for REGEX
 
 #Used to only get digits of the output of ppm meas volt 12v/3v3?
 REGEX_PATTERN = r"\D+"
@@ -64,13 +66,13 @@ from QuarchpyQCS.Drive_wrapper import  *
 #Local file where the python script is stored
 base_directory = str(os.path.dirname(os.path.realpath(__file__)))
 
-#Names a folder for output of script to go
+#Names a folder for outputs of script to go
 data_folder_name = "VoltageMarginingOutputs"
 
-#Specifies datapath in the local folder where script is stored
+#Specifies datapath explicitly in the local folder where script is stored
 data_path = os.path.join(base_directory, data_folder_name)
 
-#Creates the directory for output data
+#Creates the directory for output data, dont overwrite if already exists
 os.makedirs(data_path, exist_ok=True)
 
 #StreamPath is where the QPS Trace is stored.
@@ -79,16 +81,16 @@ stream_path = os.path.join(data_path, "QPS Trace")
 
 #Log file path is used for logging
 #E.G. logFile_25-12-03-12-00-00.txt
-log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime()) + " .txt")
+#Explicitly local time
+log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()) + " .txt")
 
-#Reference to hostInformation class for drive detection functionality
+#Calls HostInformation constructor - used for drive polling
 my_host_info = HostInformation()
 
 
-
 def main():
-    #Sets up logging file
-    logging.basicConfig(filename="output.log", level=logging.DEBUG,
+    #Sets up logging file - has both QIS logs, and script logs
+    logging.basicConfig(filename=log_file_path, level=logging.DEBUG,
                         format="[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s",
                         datefmt="%H:%M:%S")
 
@@ -97,7 +99,6 @@ def main():
 
     print("Quarch application note example: AN-014 Triggering")
     print("---------------------------------------\n\n")
-
 
     #Starts QPS
     print("Loading QPS")
@@ -165,21 +166,14 @@ def main():
 
     #Checks if 3V3 or 5V - Fixture_3V3 is true if 3V3, False if 5V
     conf_out = my_qps_device.send_command("CONFig:OUTput:MODE?")
+
     if conf_out == "3V3":
         fixture_3v3 = True
     elif conf_out =="5V":
         fixture_3v3 = False
     else:
-        print("Please manually set the output configuration. Look at line 180 in the script")
-        fixture_3v3 = None
-
-        #If using a 3V3 dumb fixture, uncomment below two lines
-        #my_qps_device.sendCommand("conf out mode 3V3")
-        #fixture_3v3 = True
-
-        #If using a 5V dumb fixture, uncomment below two lines
-        #my_qps_device.sendCommand("conf out mode 5V")
-        #fixture_3v3 = False
+        #Calls a function to manually set the fixture mode
+        fixture_3v3 = manually_set_fixture_mode()
 
     #Change the resampling rate to 100us - adjust with testing.
     my_qps_device.send_command("stream mode resample 100us")
@@ -220,7 +214,6 @@ def main():
     #REGEXPATTERN removes any non-numeric character, and is typecast to an integer
     volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
     volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
-
 
     #Creates variables used to store the voltage level when drive browns out
     brownout_12v = 0
@@ -303,6 +296,9 @@ def main():
     log_write("Closed connection, test complete")
 
     print_results(brownout_12v, brownout_3v3_5v, fixture_3v3)
+
+    exit_script(my_qps_device,None)
+    log_write("Exiting script")
 
     return None
 
@@ -508,6 +504,22 @@ def ppm_3v3_5v_lower(my_ppm,fixture_3v3):
     elif not fixture_3v3:
         my_ppm.sendCommand("SIGnal:5v:PATtern ADD 5s -5000 i")
 
+def manually_set_fixture_mode():
+    """
+    If using a dumb fixture, or fixture cannot be detected, user selects 3V3 or 5V
+    Returns True if 3V3, False if 5V
+    """
+    print("Fixture mode not automatically detected")
+    print("Please select 3V3 or 5V")
+    fixture_options = ["3V3", "5V"]
+
+    fixture_mode = listSelection(title="Fixture Mode: 3V3 or 5V", selectionList=fixture_options, nice=True)
+
+    if fixture_mode == "3V3":
+        return True
+    else:
+        return False
+
 #Shows drive identifier and drive description for each drive found
 #Otherwise just drive addresses
 def format_drive_list(wrapped_drive_list):
@@ -546,6 +558,7 @@ def print_results(level_12v_brownout, level_3v3_5v_brownout,fixture_3v3):
         log_write("Drive failed the PCIe CEM Spec for the 12V rail\n")
         passed12v = False
 
+    passed3v3 = None
     if fixture_3v3:
         print("\nPCIe CEM Spec dictates that the 3V3 rail has a tolerance of 3V3+5%-6% (3102mV < 3300mV < 3465mV)")
         print("The drive had a brown out when the 3V3 rail reached " ,level_3v3_5v_brownout, " mV")
