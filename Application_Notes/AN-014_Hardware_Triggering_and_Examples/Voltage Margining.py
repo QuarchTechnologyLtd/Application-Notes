@@ -33,10 +33,9 @@ This uses the quarchpy python package and demonstrates
 
 1- Install the required items above
 2- Connect Power Injection Fixture, and the drive
-3- Connect PPM to control PC
-4- Connect Power cables to PPM
-5- Run the script and follow the instructions on screen
-6- Refer to AN-014 set-up section for an illustration
+3- Connect PPM to the PC
+4- Run the script and follow the instructions on screen
+5- Refer to AN-014 set-up section for an illustration
 
 ####################################
 """
@@ -125,6 +124,9 @@ def main():
     #Powers on PIF so drive can be detected
     my_quarch_device.send_command("RUN:POWer UP")
 
+    print("Allowing time for drive to come online")
+    time.sleep(2)
+
     #Drive Connection
     #Uses QCS class to retrieve list of all drives
     wrapped_drive_list = my_host_info.return_wrapped_drives()
@@ -209,12 +211,6 @@ def main():
     ppm12v_lower(my_qps_device)
     log_write("12V Pattern loaded")
 
-    #Gets the voltage on the 12v channel in mv
-    #returned in the format xxxx mV as a string
-    #REGEXPATTERN removes any non-numeric character, and is typecast to an integer
-    volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
-    volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
-
     #Creates variables used to store the voltage level when drive browns out
     brownout_12v = 0
     brownout_3v3_5v = 0
@@ -225,14 +221,14 @@ def main():
     log_write("Running Pattern")
 
     #While 12V rail is more than 150mV - often noise at ground, and drive is detected
-    while volt12vint > 150 and drive_presence == True:
+    while drive_presence:
         #Polls drive
         drive_presence = poll_drive(my_drive)
 
-        volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
-        volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
-
         if not drive_presence:
+            volt12v = my_qps_device.send_command("MEASure:VOLTage 12v?")
+            volt12vint = int(re.sub(REGEX_PATTERN, '', volt12v))
+
             print("\nDrive no longer detected - brownout occurred when the 12V rail was " + volt12v)
             brownout_12v = volt12vint
             my_stream.add_annotation("Drive Brownout")
@@ -260,14 +256,14 @@ def main():
     log_write("Running Pattern")
     my_stream.add_annotation("3V3/5V Ramp Down Start")
 
-    while volt_3v3_5v_int > 150 and drive_presence == True:
+    while drive_presence:
         #Polls drive
         drive_presence = poll_drive(my_drive)
 
-        volt_3v3_5v = my_qps_device.send_command("MEASure:VOLTage 3v3?")
-        volt_3v3_5v_int = int(re.sub(REGEX_PATTERN, '', volt_3v3_5v))
-
         if not drive_presence:
+            volt_3v3_5v = my_qps_device.send_command("MEASure:VOLTage 3v3?")
+            volt_3v3_5v_int = int(re.sub(REGEX_PATTERN, '', volt_3v3_5v))
+
             if fixture_3v3:
                 print("\nDrive no longer detected - brownout occurred when the 3V3 rail was " + volt_3v3_5v)
             elif not fixture_3v3:
@@ -290,17 +286,16 @@ def main():
     my_stream.stop_stream()
     log_write("Stream stopped")
 
-    # Close the module before we go round the loop to try another test
-    # The module should always be closed when you are finished using it
+
+    my_qps_device.send_command("RUN:POWer UP")
     my_qps_device.close_connection()
     log_write("Closed connection, test complete")
 
     print_results(brownout_12v, brownout_3v3_5v, fixture_3v3)
 
-    exit_script(my_qps_device,None)
     log_write("Exiting script")
 
-    return None
+    quit()
 
 def log_write(log_string):
     """"
@@ -434,11 +429,8 @@ def poll_drive(wrapped_device):
     :return: True if drive is present, False if not
     """
 
-    #Stops the program searching through every system command for drives, if only 1 is in use
-    drive_type = wrapped_device.drive_type
-
     #Returns a list of wrapped drives
-    device_list = my_host_info.return_wrapped_drives(drive_type)
+    device_list = my_host_info.return_wrapped_drives()
 
     for item in device_list:
         #Double check as switches may have same identifier but different description
@@ -467,7 +459,7 @@ def ppm12v_lower(my_ppm):
     """
     reset12v_nominal(my_ppm)
 
-    #Pattern to ramp down -12V down to 0 over 100ms
+    #Pattern to ramp down -12V down to 0 over 5s
     my_ppm.send_command("SIGnal:12v:PATtern ADD 5s -12000 i")
 
 #Clears any pattern and sets 3V3/5V channel to 3V3/5V
@@ -574,20 +566,6 @@ def print_results(level_12v_brownout, level_3v3_5v_brownout,fixture_3v3):
     if (passed12v == True) and (passed3v3 == True):
         print("\nThe drive meets the PCIe CEM Spec with respect to power\n")
 
-#Exits script cleanly, and closes the connection to the device
-def exit_script(my_device, err=None):
-    """
-    Exit script cleanly, ensuring module is reset to default state
-    and no connection to module is left open.
-
-    :param my_device: quarchDevice obj - Module wrapper for selected module.
-    :param err : String (optional) - Display an error to user before exiting the script.
-    """
-    my_device.send_command("CONFig:DEFault STATE")
-    my_device.close_connection()
-    if err:
-        logging.error(err)
-    quit()
 
 # Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":

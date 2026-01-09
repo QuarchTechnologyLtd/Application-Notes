@@ -141,6 +141,13 @@ def main():
     log_write("Power up delays selected: "+ delay1_up +"ms " + delay2_up +"ms " + delay3_up+"ms")
 
     print("\nPlease enter the delays in ms for the power down sequence")
+
+    print("\n*************************")
+    print("Please check the manual for the breaker for more details about power up vs power down timing")
+    print("Power down delays are mirrored power up delays")
+    print("A higher number means a shorter delay upon power down")
+    print("**************************\n")
+
     delay1_down, delay2_down, delay3_down = user_select_delays()
     log_write("Power down delays selected: " + delay1_down + "ms " + delay2_down + "ms " + delay3_down + "ms")
 
@@ -152,8 +159,9 @@ def main():
     breaker_device.close_connection()
     log_write("Closed breaker connection")
 
-
+    #Opening QPS
     print("-Starting QPS")
+
     # Checks if QPS is already running, and starts it if it isn't
     if not isQpsRunning():
         log_write("Starting QPS")
@@ -185,15 +193,14 @@ def main():
     log_write("Connected to PAM. PAM identity:")
     log_write(pam_device.send_command("*idn?"))
 
-    #Averaging window of 4us for digital signals
-    #Check default stream rate
-    #pam_device.send_command("RECord:AVEraging:GROup 1 8")
-
     #Powers the pam up
     pam_device.send_command("RUN:POWer up")
 
     # Creates the stream folder, named YY-MM-DD_HH_MM_SS
     file_name = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
+
+
+    #STREAM START
 
     #Started the stream
     my_stream = pam_device.start_stream(stream_path + "\\" + file_name)
@@ -202,15 +209,18 @@ def main():
     #Opens connection to the breaker
     breaker_device.open_connection()
 
+    #Waits 2 seconds before powerup
+    time.sleep(2)
+
     #Powers up the breaker - This starts the sequence of delays on the power up
     breaker_device.send_command("RUN:POWer up")
     log_write("Breaker powered up, sequence started")
 
-    #Gives some time for the drive to be recognised, and the stream to record
+    #Gives some time for the device to be recognised, and the stream to record
     time.sleep(5)
 
     #Breaker configured for power down - delays of 100ms, 75ms and 50ms
-    breaker_config_sequence(my_quarch_device, delay1_down, delay2_down, delay3_down)
+    breaker_config_sequence(breaker_device, delay1_down, delay2_down, delay3_down)
     log_write("Breaker power down configured")
 
     #Waits 1s before running the pattern
@@ -218,11 +228,14 @@ def main():
     breaker_device.send_command("RUN:POWer down")
 
     #Gives time to record before ending stream
-    time.sleep(5)
+    time.sleep(3)
 
     #Stops streaming
     my_stream.stop_stream()
     log_write("Stream completed")
+
+    #Powers up breaker once stream is done, so device can be redetected
+    breaker_device.send_command("RUN:POWer up")
 
     #Close connection to the breaker and PAM - streaming finished
     breaker_device.close_connection()
@@ -238,14 +251,12 @@ def main():
     print("\nThere is no specific requirement for power supply sequencing of the power supply rails, whether")
     print("delivered by the system board or cables. They may come up or go down in any order. ")
 
-    print("Change the order of the power rails going up, and see if the device still comes online")
+    print("\nChange the order of the power rails going up, and see if the device still comes online")
 
     log_write("Test completed")
 
-    exit_script(pam_device, breaker_device, None)
     log_write("Exiting script")
-
-    return None
+    quit()
 
 def user_select_delays():
     """
@@ -255,6 +266,8 @@ def user_select_delays():
 
     :return str delay1, delay2, delay3:  Delays in ms to assign to power rails
     """
+    print("Please enter the delays below. Suggested delays are: 50, 150, 100ms")
+
     print("Please enter the delay for the 12V rail in ms")
     delay1_input = str(input("Delay 1: "))
     delay1 = re.sub(REGEX_PATTERN, '', delay1_input)
@@ -274,9 +287,6 @@ def user_select_delays():
 
     return [delay1,delay2,delay3]
 
-#Configures the breaker
-#PCIe CEM standard has no specific requirement on power supply sequencing
-#Therefore any order of 12V, 3V3 or 3V3_Aux power up or power down is permissible
 def breaker_config_sequence(my_breaker, delay1, delay2, delay3):
     """
     Used to configure the breaker delays on power rails
@@ -312,13 +322,17 @@ def user_select_power_rail_trig(my_breaker):
 
     print("Please select the power rail to trigger the breaker from")
     #PCIe based drives, so 12V, 3V3 and 3V3 Aux power rails
-    power_rail_options = ["12V", "3V3"]
+    power_rail_options = ["12V_HOST", "3V3_HOST", "3V3_AUX"]
     #Asks the user to select an option for the power rail to trigger from
     power_rail_trig = listSelection(title="Power rail to trigger from", selectionList=power_rail_options, nice=True)
+
+    my_breaker.send_command("TRIGger:IN:MODE POWER")
+
     #Assign power_rail_trig to the rail
-    #power_rail_trig = power_rail_options[power_rail_index]
-    #3v3_host or 12v_host
-    my_breaker.send_command("TRIGger:OUT:MODE " + power_rail_trig + "_host")
+    #12v_Host, 3v3_host, 3v3_aux
+    log_write("Power rail triggered from is " + power_rail_trig)
+    print("Power rail triggered from is " + power_rail_trig)
+    my_breaker.send_command("TRIGger:IN:SOURce " + power_rail_trig)
 
 def log_write(log_string):
     """"
@@ -331,25 +345,6 @@ def log_write(log_string):
     #Writes the string log_string to log file and prints new line
     with open(log_file_path, "a") as log_file:
         log_file.write(log_string + "\n")
-
-#Exits script cleanly, and closes the connection to the device
-def exit_script(my_device1, my_device2, err=None):
-    """
-    Exit script cleanly, ensuring module is reset to default state
-    and no connection to module is left open.
-    #Script makes use of 2 modules, hence has 2 devices as parameters
-
-    :param my_device1: quarchDevice obj - Module wrapper for selected module.
-    :param my_device2: quarchDevice obj - Module wrapper for selected module.
-    :param err : String (optional) - Display an error to user before exiting the script.
-    """
-    my_device1.send_command("CONFig:DEFault STATE")
-    my_device1.close_connection()
-    my_device2.send_command("CONFig:DEFault STATE")
-    my_device2.close_connection()
-    if err:
-        logging.error(err)
-    quit()
 
 # Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":
