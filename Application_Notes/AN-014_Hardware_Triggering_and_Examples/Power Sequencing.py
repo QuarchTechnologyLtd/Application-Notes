@@ -8,7 +8,7 @@ This uses the quarchpy python package and demonstrates
 - Runs a simple script for the breaker and PAM
 - Takes user input using Quarchpy's userInterface
 - Configures a breaker to add user configurable delays
-- And sets the breaker to trigger on a user selectable power rail (3V3 or 12V)
+- And sets the breaker to trigger from a user selectable power rail (3V3 or 12V)
 - Uses a PAM to verify the operation is working as expected
 
 The commands sent to the device are in the format
@@ -42,19 +42,28 @@ Commands are not case-sensitive. Most commands will have short forms - e.g. POWe
 
 ####################################
 
-This script was written and tested using a QTL2910 AIC PAM Fixture, and a QTL2358 AIC Breaker,
-with a Host Card as the PCIe device
+This application note references the PCIe Card ElectroMechanical Specification. It is therefore recommended to use
+Add-In Card modules rather than another standard based on the PCIe spec.
 
-This script uses both a breaker and a PAM. This script is to check whether a PCIe based device meets the PCIe CEM spec,
-in regard to power sequencing
+This app note can be used to help verify compliance with the spec. You should run this script a few times, varying the
+length and order of delays, and the power rail that is triggered from changed.
+
+This script was written and tested using a QTL2910 AIC PAM Fixture, and a QTL2358 AIC Breaker,
+with a Host Card as the PCIe device - See Scripts User Guide.docx for an image of the setup
+
+It is suggested to use separate host and control PCs. Connect the Torridon and PAM to the control PC. Run the script,
+follow the instructions on screen. Once the stream starts, power up or power down the host PC.
+
+
 Section 4.4 of the PCIe CEM specification states
 
-There is no specific requirement for power supply sequencing of the power supply rails, whether
-delivered by the system board or cables. They may come up or go down in any order
+There is no specific requirement for power supply sequencing of the power supply rails, whether delivered by the
+system board or cables. They may come up or go down in any order
 """
 
 # Import necessary libraries used in the examples
 import os
+import sys
 import time     # Used for sleep commands to add delays
 import logging  # Used for logging - mainly for debugging but log file is created automatically
 import re       #REGEX, used for stripping and validating inputs
@@ -98,6 +107,17 @@ def main():
     print("Quarch application note example: AN-014 Power Sequencing")
     print("---------------------------------------\n\n")
 
+    #Gives instructions to user in the terminal
+    print("\n*************************************")
+    print("*************************************\n")
+    print("When the stream is running, power up or power down the host system")
+    print("The stream will run for 60 seconds - you can adjust this value")
+    print("\n*************************************")
+    print("*************************************\n")
+
+    #Allows time to read the brief instruction
+    time.sleep(8)
+
     # Scan for quarch devices over all connection types (USB, Serial and LAN)
     print("Connect to Breaker. Scanning for Devices...\n")
     log_write("Connecting to breaker")
@@ -127,37 +147,18 @@ def main():
     breaker_device.send_command("CONFig:DEFault STATE")
     log_write("Breaker set to default state")
 
-    #Powers down the breaker
+    #Breaker is powered down -
     breaker_device.send_command("RUN:POWer DOWN")
     log_write("Breaker powered down")
 
     #Configure what power rail the breaker is triggered off
-    user_select_power_rail_trig(breaker_device)
+    user_select_trigger(breaker_device)
 
     #Calls the user selected delay function
     print("Please enter the delays in ms for the power up sequence")
 
     delay1_up, delay2_up, delay3_up = user_select_delays()
     log_write("Power up delays selected: "+ delay1_up +"ms " + delay2_up +"ms " + delay3_up+"ms")
-
-    print("\nPlease enter the delays in ms for the power down sequence")
-
-    print("\n*************************")
-    print("Please check the manual for the breaker for more details about power up vs power down timing")
-    print("Power down delays are mirrored power up delays")
-    print("A higher number means a shorter delay upon power down")
-    print("**************************\n")
-
-    delay1_down, delay2_down, delay3_down = user_select_delays()
-    log_write("Power down delays selected: " + delay1_down + "ms " + delay2_down + "ms " + delay3_down + "ms")
-
-    #Configures breaker with delays of 25, 50 and 75ms
-    breaker_config_sequence(breaker_device, delay1_up, delay2_up, delay3_up)
-    log_write("Breaker power up configured")
-
-    #Close the connection to the breaker for the time being
-    breaker_device.close_connection()
-    log_write("Closed breaker connection")
 
     #Opening QPS
     print("-Starting QPS")
@@ -189,15 +190,19 @@ def main():
     pam_device.open_connection()
     log_write("PAM connection opened")
 
+    # Powers the pam up
+    pam_device.send_command("RUN:POWer up")
+
     #Logs the PAM identity
     log_write("Connected to PAM. PAM identity:")
     log_write(pam_device.send_command("*idn?"))
 
-    #Powers the pam up
-    pam_device.send_command("RUN:POWer up")
-
     # Creates the stream folder, named YY-MM-DD_HH_MM_SS
     file_name = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
+
+    #Configures breaker with user selected delay
+    breaker_configure_delays(breaker_device, delay1_up, delay2_up, delay3_up)
+    log_write("Breaker power up configured")
 
 
     #STREAM START
@@ -206,36 +211,15 @@ def main():
     my_stream = pam_device.start_stream(stream_path + "\\" + file_name)
     log_write("Stream started")
 
-    #Opens connection to the breaker
-    breaker_device.open_connection()
-
-    #Waits 2 seconds before powerup
-    time.sleep(2)
-
-    #Powers up the breaker - This starts the sequence of delays on the power up
-    breaker_device.send_command("RUN:POWer up")
-    log_write("Breaker powered up, sequence started")
-
-    #Gives some time for the device to be recognised, and the stream to record
-    time.sleep(5)
-
-    #Breaker configured for power down - delays of 100ms, 75ms and 50ms
-    breaker_config_sequence(breaker_device, delay1_down, delay2_down, delay3_down)
-    log_write("Breaker power down configured")
-
-    #Waits 1s before running the pattern
-    time.sleep(1)
-    breaker_device.send_command("RUN:POWer down")
-
-    #Gives time to record before ending stream
-    time.sleep(3)
+    #Streams for 60 seconds - enough for a power up and power down on some systems - increase this if needed
+    time.sleep(60)
 
     #Stops streaming
     my_stream.stop_stream()
     log_write("Stream completed")
 
-    #Powers up breaker once stream is done, so device can be redetected
-    breaker_device.send_command("RUN:POWer up")
+    #STREAM END
+
 
     #Close connection to the breaker and PAM - streaming finished
     breaker_device.close_connection()
@@ -245,49 +229,69 @@ def main():
 
     #Test finished
     print("Test completed")
-    print("Change the delays, and the power rail that is triggered off, and check if the spec is met")
 
-    print("\nThe PCI Express Card Electromechanical Specification, Revision 6, Section 4.4 states")
+    print("\n\nThe PCI Express Card Electromechanical Specification, Revision 6, Section 4.4 states")
     print("\nThere is no specific requirement for power supply sequencing of the power supply rails, whether")
     print("delivered by the system board or cables. They may come up or go down in any order. ")
 
-    print("\nChange the order of the power rails going up, and see if the device still comes online")
+    print("\nSuggested actions to verify compliance with spec:")
+    print("\n\nChange the host power rail that is triggered from")
+    print("Change the delays, and the order of the delays")
+    print("Verify that the device comes online as expected")
 
     log_write("Test completed")
-
     log_write("Exiting script")
-    quit()
+    sys.exit()
+
 
 def user_select_delays():
     """
     Used to input delays in milliseconds from the user.
     Delay 1 is for 12V_POWER, Delay 2 is for 3V3_POWER, Delay 3 is for 3V3_AUX
     Inputs are stripped of any non-numeric characters
+    If left blank, or wholly non-numeric characters, default delays of 1s, 2s, 1.5s will be assigned
 
     :return str delay1, delay2, delay3:  Delays in ms to assign to power rails
     """
-    print("Please enter the delays below. Suggested delays are: 50, 150, 100ms")
+    print("\nPlease enter the delays below. Suggested delays are: 1000, 2000, 1500ms")
+    print("If left blank, suggested delays will be the default")
 
-    print("Please enter the delay for the 12V rail in ms")
+    print("\nThe delay entered is the time after host power comes up, that each power rail will come up\n")
+
+    print("\nPlease enter the delay for the 12V rail in ms")
     delay1_input = str(input("Delay 1: "))
     delay1 = re.sub(REGEX_PATTERN, '', delay1_input)
+    #If Blank
+    if delay1 == "":
+        delay1 = str(1000)
+    else:
+        delay1 = delay1
 
-    print("Please enter the delay for the 3V3 rail in ms")
+    print("\nPlease enter the delay for the 3V3 rail in ms")
     delay2_input = str(input("Delay 2: "))
     delay2 = re.sub(REGEX_PATTERN, '', delay2_input)
+    #If Blank
+    if delay2 == "":
+        delay2 = str(2000)
+    else:
+        delay2 = delay2
 
-    print("Please enter the delay for the 3V3_AUX rail in ms")
+    print("\nPlease enter the delay for the 3V3_AUX rail in ms")
     delay3_input = str(input("Delay 3: "))
     delay3 = re.sub(REGEX_PATTERN, '', delay3_input)
+    if delay3 == "":
+        delay3 = str(1500)
+    else:
+        delay3 = delay3
 
     print("\nDelays selected are")
-    print("12V delay :" + delay1 + "ms")
-    print("3V3 delay :" + delay2 + "ms")
-    print("3V3_AUX delay :" + delay3 + "ms\n")
+    print("12V delay: " + delay1 + "ms")
+    print("3V3 delay: " + delay2 + "ms")
+    print("3V3_AUX delay: " + delay3 + "ms\n")
 
     return [delay1,delay2,delay3]
 
-def breaker_config_sequence(my_breaker, delay1, delay2, delay3):
+def breaker_configure_delays(my_breaker, delay1, delay2, delay3):
     """
     Used to configure the breaker delays on power rails
     Written for PCIe based devices, so 12V and 3V3, with an optional 3V3Aux - hence 3 delays
@@ -299,7 +303,7 @@ def breaker_config_sequence(my_breaker, delay1, delay2, delay3):
     :return None:
     """
 
-    my_breaker.open_connection()
+    #smy_breaker.open_connection()
     #Delays are in milliseconds
     my_breaker.send_command("SOURce:1 DELAY " + delay1)
     my_breaker.send_command("SOURce:2 DELAY " + delay2)
@@ -312,27 +316,35 @@ def breaker_config_sequence(my_breaker, delay1, delay2, delay3):
     my_breaker.send_command("SIGnal:3V3_AUX:SOURce 3")
     log_write("Signals have been assigned delays")
 
-def user_select_power_rail_trig(my_breaker):
+def user_select_trigger(my_breaker):
     """
-    Configures the breaker to trigger from either 3V3 or 12V, with user input
+    Takes user input to select the host power rail to trigger the breaker power from
 
     :param my_breaker: The breaker that is used.
-    :return power_rail_trig: The rail to trigger breaker signals from
+    :return None:
     """
 
-    print("Please select the power rail to trigger the breaker from")
-    #PCIe based drives, so 12V, 3V3 and 3V3 Aux power rails
-    power_rail_options = ["12V_HOST", "3V3_HOST", "3V3_AUX"]
+    print("\nPlease select the power rail to trigger the breaker from")
+
+    #3V3_AUX is not available as an option, as it is normally on standby
+    power_rail_options = ["12V_HOST", "3V3_HOST"]
+
     #Asks the user to select an option for the power rail to trigger from
     power_rail_trig = listSelection(title="Power rail to trigger from", selectionList=power_rail_options, nice=True)
 
+    #Sets the trigger mode to power
     my_breaker.send_command("TRIGger:IN:MODE POWER")
 
-    #Assign power_rail_trig to the rail
-    #12v_Host, 3v3_host, 3v3_aux
-    log_write("Power rail triggered from is " + power_rail_trig)
-    print("Power rail triggered from is " + power_rail_trig)
+    #Triggers on the rising edge of the power rail
+    my_breaker.send_command("TRIGger:IN:TYPE EDGE")
+
+    #Sets the trigger to the rail the user selected
     my_breaker.send_command("TRIGger:IN:SOURce " + power_rail_trig)
+
+    #Logs and prints the rail selected
+    log_write("Power rail triggered from is " + power_rail_trig)
+    print("Power rail triggered from is " + power_rail_trig + "\n")
+
 
 def log_write(log_string):
     """"
