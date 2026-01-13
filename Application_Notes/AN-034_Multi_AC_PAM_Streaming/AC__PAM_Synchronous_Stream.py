@@ -28,6 +28,8 @@ Don't need microsecond alignment, but sub millisecond
 """
 import time
 import os
+import pandas as pd
+
 
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
@@ -48,10 +50,13 @@ def main():
     pam_2_address = "TCP:10.0.9.204"
 
     #User selectable whether connection is done via QIS or via QPS
-    connection_list = ["QIS", "QPS"]
+    #connection_list = ["QIS", "QPS"]
 
     #String, with the value either QIS or QPS
-    connection_type = listSelection(title="Connection: QIS or QPS", selectionList=connection_list, nice=True)
+    #connection_type = listSelection(title="Connection: QIS or QPS", selectionList=connection_list, nice=True)
+
+    #QPS is not currently working - remove option to use QPS
+    connection_type = "QIS"
 
     #Use single instance of QIS
     if connection_type == "QIS":
@@ -61,11 +66,11 @@ def main():
             startLocalQis()
 
         #Connects to the localhost QIS instance
-        myQisInterface = QisInterface()
+        QisInterface()
 
         #Connects 2 pam devices to the same QIS Instance
         pam_1_device = get_quarch_device(connectionTarget=pam_1_address, ConType=connection_type)
-        #Upgrades PAM to quarchPower class
+        #Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
         pam_1_power_device = quarchPPM(pam_1_device)
 
         pam_2_device = get_quarch_device(connectionTarget=pam_2_address, ConType=connection_type)
@@ -81,8 +86,8 @@ def main():
 
         print("Stream Running for 60 seconds")
 
-        pam_1_power_device.start_stream(file_name=file_name_pam_1, stream_duration=60,release_on_data=False)
-        pam_2_power_device.start_stream(file_name=file_name_pam_2, stream_duration=60,release_on_data=False)
+        pam_1_power_device.start_stream(file_name=file_name_pam_1, stream_duration=60)
+        pam_2_power_device.start_stream(file_name=file_name_pam_2, stream_duration=60)
 
 
     #Else - connection type is QPS, open 2 instances of QPS with a separate QIS backend
@@ -108,12 +113,51 @@ def main():
         pam_2_device.open_connection()
 
 
-    #quarchStream - save_csv
+    time.sleep(60)
+
+    print("Stream completed")
+
+    time.sleep(5)
+
+    csv_combiner("RawDataPam1.csv", "RawDataPam2.csv")
+
+    import_csv_to_qps(pam_1_power_device)
+    pam_1_power_device.close_connection()
+    pam_2_power_device.close_connection()
 
     return None
 
-def csv_manipulation(csv_file):
-    print("ToDO")
+def csv_combiner(csv_file_1, csv_file_2):
+    #The name of the file to be outputted
+    combined_csv_name = "CombinedData.csv"
+
+    #Uses pandas - a data analysis and manipulation tool
+    csv1 = pd.read_csv(csv_file_1)
+    csv2 = pd.read_csv(csv_file_2)
+
+    #Column name of the time column - This will be the same in both CSVs, and should not be changed
+    shared_time_column = "Time uS"
+
+    #Unresolved attribute is not an issue - runs fine
+    csv1_prefix = csv1.add_prefix("1_").rename(columns={"1_" + shared_time_column: shared_time_column})
+    csv2_prefix = csv2.add_prefix("2_").rename(columns={"2_" + shared_time_column: shared_time_column})
+
+    merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
+
+    merged_data.to_csv(combined_csv_name, index=False)
+
+    print("CSVs have been combined")
+    return "CombinedData.csv"
+
+def import_csv_to_qps(pam_to_upgrade):
+    #Close connection - reopen it
+
+    startLocalQps()
+    myQpsInterface = QpsInterface()
+
+
+
+    myQpsInterface.sendCommand("$stream import file=C:/Users/asteedman/Documents/Github/Application-Notes/Application_Notes/AN-034_Multi_AC_PAM_Streaming/CombinedData.csv")
 
 if __name__ == "__main__":
     main()
