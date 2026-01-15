@@ -2,16 +2,20 @@
 This Application Note uses 2 AC Power Analysis Modules to stream synchronously, with the user choosing to stream
 over QIS or over QPS. Either option will export a CSV, which is then merged, and opened in QPS.
 
-The data recorded is from the same source, but due to the high power requirements, 2 AC PAMs are required. Recommended
-TCP PoE connection rather than USB.
+The application this has been designed for is for a high power environment, where a single AC PAM does not have the
+capability to measure the full load, so 2 AC PAMs are used. Both PAM data streams can be viewed side by side.
+Through testing the de-sync time ranges from 1.125ms to 20ms (Less than 1 cycle at 50Hz mains frequency). This will
+vary with the system, and what programs are open on the machine.
 
-Both PAM data streams can be viewed side by side. Connecting to both PAMs via TCP has a current lag of approximately
-63 milliseconds, between one trace starting recording and the second trace starting recording.
+To cut down latency between the stream starts, threading is used. Threading is a way of running multiple processes
+concurrently. Before threading was implemented, there was a latency of between 60ms and 120ms, of 1 stream starting then
+the next starting. A flag is used to start both processes. Through testing, this has been seen at sub 2ms latency.
 
 This AN-034 uses the quarchpy python package and demonstrates
 -Streaming from multiple instruments at the same time
--Post processing of CSV data
--Importing CSV data into QPS to display
+-Threading
+-Combining multiple CSVs into a single CSV, with a shared column
+-Manually importing CSVs into QPS for comparison.
 
 ########### VERSION HISTORY ###########
 13/01/2026 - Andrew Steedman - Created
@@ -29,20 +33,19 @@ This AN-034 uses the quarchpy python package and demonstrates
 ########### INSTRUCTIONS ##############
 
 1 - Connect AC PAMs to the same LAN as control PC
-2 - Connect AC PAMs to load
-3 - Change the global variables: pam_1_address, pam_2_address, stream_length
+2 - Connect AC PAMs to power
+3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS,FILE_NAME_COMBINED, STREAM_LENGTH
 4 - Run the script
 
-Lag was 60ms with IEC recording first, 85ms with 3P recording first.
-
 #TODO
-Reduce this lag - Either through broadcasting over IP to start recording at the same time, or via multithreading and raising flags
 Quarchpy QPS API change - enable the scripting of multiple instances, with a separate QIS backend
 Automate the CSV imports into QPS - Manual import works as expected
 """
 import time
-import os
 import pandas as pd #CSV manipulation
+import threading #Used for synchronous processes
+
+#Used for attempting automated CSV import
 from tkinter import Tk #Used as a GUI
 from tkinter.filedialog import askopenfilename #Used to open the CSV to reopen
 
@@ -54,13 +57,19 @@ from quarchpy.device import *
 from quarchpy.user_interface import *
 from quarchpy.connection_specific import *
 
-#USER TO CHANGE
+FILE_NAME_COMBINED = "CombinedPamData.csv"
+
+#USER TO CHANGE - Constants, Should be static while program is running
 # Hardcoded PAM Addresses
-pam_1_address = "TCP:10.0.9.146"
-pam_2_address = "TCP:10.0.9.204"
+PAM_1_ADDRESS = "TCP:10.0.9.146"
+PAM_2_ADDRESS = "TCP:10.0.9.204"
+
+# Creates the CSV files for both stream 1 and stream 2
+FILE_NAME_PAM_1 = "RawDataPam1.csv"
+FILE_NAME_PAM_2 = "RawDataPam2.csv"
 
 #Stream length in seconds - QIS call takes float parameter
-stream_length = float(60)
+STREAM_LENGTH = float(60)
 #/USER TO CHANGE/
 
 def main():
@@ -96,12 +105,12 @@ def main():
     QisInterface()
 
     #Connects 1st pam device to the same QIS Instance
-    pam_1_device = get_quarch_device(connectionTarget=pam_1_address, ConType=connection_type)
+    pam_1_device = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type)
     #Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
     pam_1_power_device = quarchPPM(pam_1_device)
 
     #Connect the 2nd PAM device to same QIS Instance
-    pam_2_device = get_quarch_device(connectionTarget=pam_2_address, ConType=connection_type)
+    pam_2_device = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type)
     # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
     pam_2_power_device = quarchPPM(pam_2_device)
 
@@ -109,19 +118,25 @@ def main():
     print(pam_1_device.send_command("*idn?"))
     print(pam_2_device.send_command("*idn?"))
 
-    #Creates the CSV files for both stream 1 and stream 2
-    file_name_pam_1 = "RawDataPam1.csv"
-    file_name_pam_2 = "RawDataPam2.csv"
+    #Creates the flag
+    recording_start_flag = threading.Event()
 
-    print("Stream Running for 60 seconds")
+    #Creates a thread to start the PAM Stream, using recording_start_flag to synchronise the streams
+    #Target is a local function, to start a QuarchPPM data stream
+    pam_1_thread = threading.Thread(target=start_pam_stream, args=(pam_1_power_device, FILE_NAME_PAM_1, recording_start_flag))
+    pam_2_thread = threading.Thread(target=start_pam_stream, args=(pam_2_power_device, FILE_NAME_PAM_2, recording_start_flag))
 
-    #Waits 1 second before starting stream
-    time.sleep(1)
+    #Starts the threads
+    pam_1_thread.start()
+    pam_2_thread.start()
 
-    #Starts stream on both devices for 60 seconds - May change (broadcast, or multithread)
-    pam_1_power_device.start_stream(file_name=file_name_pam_1, stream_duration=stream_length)
-    pam_2_power_device.start_stream(file_name=file_name_pam_2, stream_duration=stream_length)
+    print("Stream Running for " + str(round(STREAM_LENGTH,1)) + " seconds")
 
+    #Waits 1 second to ensure both threads are ready
+    time.sleep(0.5)
+
+    #Sets the flag, starting the stream
+    recording_start_flag.set()
 
     #TO UNCOMMENT
     """
@@ -152,10 +167,10 @@ def main():
     # /TO UNCOMMENT/
 
     #Waits stream_length: Default before user modification is 60 seconds
-    visual_sleep(stream_length)
+    visual_sleep(STREAM_LENGTH)
 
-    print("Stream completed")
-    print("Combining CSV files")
+    print("Stream completed\n")
+    print("Combining CSV files...")
 
     #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
     csv_combiner("RawDataPam1.csv", "RawDataPam2.csv")
@@ -164,20 +179,42 @@ def main():
     pam_1_power_device.close_connection()
     pam_2_power_device.close_connection()
 
+    print("\nStream completed successfully\n")
+
     #PLACEHOLDER
-    print("To view the traces in Quarch Power Studio, go to the location the script is stored")
-    print("Open up QPS, re-connect to one of the PAMs")
+    print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
+
+    #Opens QPS, ready for user to manually import CSV
+    open_qps_to_view_csv()
+
+    print("To open")
     print("File -> Import -> From CSV -> New Recording")
     print("Select the CSV named CombinedData.csv")
+    print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_")
 
-    #TO UNCOMMENT
-    """
-    #Importing into QPS is not currently working - command not implemented?
-    import_csv_to_qps()
-    """
-    # /TO UNCOMMENT/
 
     return None
+
+def start_pam_stream(pam, filename, record_flag):
+    """
+    This is used for threading - split into a function to configure
+    Starts a data stream from the PAM
+
+    Args:
+        pam: A QuarchPPM object - The PAM connected
+        filename: The CSV to record to
+        record_flag: The flag - Starts as waiting
+
+    Returns: None
+    """
+
+    #Calls the method
+    #With parameters passed in as named above
+    #pam_1_power_device.start_stream(file_name=file_name_pam_1, stream_duration=stream_length)
+    pam.start_stream(file_name=filename, stream_duration=STREAM_LENGTH)
+
+    #Sets the recording flag as waiting
+    record_flag.wait()
 
 def csv_combiner(csv_file_1, csv_file_2):
     """
@@ -186,11 +223,8 @@ def csv_combiner(csv_file_1, csv_file_2):
         csv_file_1: The CSV export from PAM 1
         csv_file_2: The CSv export from PAM 2
 
-    Returns CombinedData.csv: The merged CSV
+    Returns None:
     """
-
-    #The name of the file to be outputted
-    combined_csv_name = "CombinedData.csv"
 
     #Uses pandas - a data analysis and manipulation tool
     #Creates a dataframe of each csv
@@ -211,25 +245,17 @@ def csv_combiner(csv_file_1, csv_file_2):
     merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
 
     #Changes the dataframe to CSV
-    merged_data.to_csv(combined_csv_name, index=False)
+    merged_data.to_csv(FILE_NAME_COMBINED, index=False)
 
     #Prints the filename
-    print("CSVs have been combined - filename = " + combined_csv_name)
-    #Returns the CSV - possibly unused?
-    return "CombinedData.csv"
+    print("CSVs have been combined - filename = " + FILE_NAME_COMBINED)
 
-def import_csv_to_qps():
+def open_qps_to_view_csv():
     """
-    NOT WORKING
+    Opens QPS and reconnects to PAM 1
+    Used for user to view the CSVs as QPS Traces - currently semi-automated process
 
-    Automate the QPS import of a CSV - Command is not currently implemented?
-    Function is kept, not called
-    Manual way is
-    QPS -> File -> Import -> From CSV -> New Recording
-
-    Works as expected
-
-    Returns:
+    Returns: None
 
     """
     #Starts Local QPS instance
@@ -239,7 +265,7 @@ def import_csv_to_qps():
     myLocalInterface = qpsInterface()
 
     #Connect PAM1 (again), explicitly QPS
-    pam_1_device = get_quarch_device(connectionTarget=pam_1_address, ConType="QPS")
+    pam_1_device = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType="QPS")
 
     #Upgrade PAM1 to a QPS device
     my_qps_pam = quarchQPS(pam_1_device)
@@ -247,6 +273,8 @@ def import_csv_to_qps():
     #Opens connection to PAM
     my_qps_pam.open_connection()
 
+    #The automated section
+    """
     print("Please open the CSV to be displayed")
 
     #Tk is a python GUI package
@@ -270,6 +298,7 @@ def import_csv_to_qps():
     cmd_result = myLocalInterface.sendCmdVerbose(command)
 
     print("Importing of CSV Values: " + cmd_result)
+    """
 
 
 if __name__ == "__main__":
