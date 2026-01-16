@@ -44,6 +44,8 @@ Automate the CSV imports into QPS - Manual import works as expected
 import time
 import pandas as pd #CSV manipulation
 import threading #Used for synchronous processes
+import psutil
+import os
 
 #Used for attempting automated CSV import
 from tkinter import Tk #Used as a GUI
@@ -64,7 +66,6 @@ FILE_NAME_COMBINED = "CombinedPamData.csv"
 PAM_1_ADDRESS = "TCP:10.0.9.146"
 PAM_2_ADDRESS = "TCP:10.0.9.204"
 
-# Creates the CSV files for both stream 1 and stream 2
 FILE_NAME_PAM_1 = "RawDataPam1.csv"
 FILE_NAME_PAM_2 = "RawDataPam2.csv"
 
@@ -72,8 +73,14 @@ FILE_NAME_PAM_2 = "RawDataPam2.csv"
 STREAM_LENGTH = float(60)
 #/USER TO CHANGE/
 
+#recording_start_flag = threading.Barrier(2)
+
+trigger = [False]
+
 def main():
-    print("Starting script")
+    p = psutil.Process(os.getpid())
+    p.nice(psutil.HIGH_PRIORITY_CLASS)
+
 
     #TO UNCOMMENT
     """
@@ -115,28 +122,36 @@ def main():
     pam_2_power_device = quarchPPM(pam_2_device)
 
     #Prints the identity of both
+    print("PAM 1 is:")
     print(pam_1_device.send_command("*idn?"))
+
+    print("\nPAM 2 is:")
     print(pam_2_device.send_command("*idn?"))
 
-    #Creates the flag
-    recording_start_flag = threading.Event()
+
+    print("Creating threads")
+    #time.sleep(2)
+
 
     #Creates a thread to start the PAM Stream, using recording_start_flag to synchronise the streams
     #Target is a local function, to start a QuarchPPM data stream
-    pam_1_thread = threading.Thread(target=start_pam_stream, args=(pam_1_power_device, FILE_NAME_PAM_1, recording_start_flag))
-    pam_2_thread = threading.Thread(target=start_pam_stream, args=(pam_2_power_device, FILE_NAME_PAM_2, recording_start_flag))
+    pam_2_thread = threading.Thread(target=start_pam_stream, args=(pam_2_power_device, FILE_NAME_PAM_2, STREAM_LENGTH))
+    pam_1_thread = threading.Thread(target=start_pam_stream, args=(pam_1_power_device, FILE_NAME_PAM_1, STREAM_LENGTH))
+
 
     #Starts the threads
-    pam_1_thread.start()
     pam_2_thread.start()
+    pam_1_thread.start()
 
-    print("Stream Running for " + str(round(STREAM_LENGTH,1)) + " seconds")
 
-    #Waits 1 second to ensure both threads are ready
-    time.sleep(0.5)
+    time.sleep(2)
 
-    #Sets the flag, starting the stream
-    recording_start_flag.set()
+    trigger[0] = True
+
+    pam_1_thread.join()
+    pam_2_thread.join()
+
+    visual_sleep(STREAM_LENGTH)
 
     #TO UNCOMMENT
     """
@@ -166,8 +181,6 @@ def main():
     """
     # /TO UNCOMMENT/
 
-    #Waits stream_length: Default before user modification is 60 seconds
-    visual_sleep(STREAM_LENGTH)
 
     print("Stream completed\n")
     print("Combining CSV files...")
@@ -195,7 +208,17 @@ def main():
 
     return None
 
-def start_pam_stream(pam, filename, record_flag):
+"""
+def start_pam_1(pam_1):
+    recording_start_flag.wait()
+    pam_1.start_stream(file_name=FILE_NAME_PAM_1, stream_duration=STREAM_LENGTH)
+
+def start_pam_2(pam_2):
+    recording_start_flag.wait()
+    pam_2.start_stream(file_name=FILE_NAME_PAM_2, stream_duration=STREAM_LENGTH)
+"""
+
+def start_pam_stream(pam, filename, duration):
     """
     This is used for threading - split into a function to configure
     Starts a data stream from the PAM
@@ -203,18 +226,20 @@ def start_pam_stream(pam, filename, record_flag):
     Args:
         pam: A QuarchPPM object - The PAM connected
         filename: The CSV to record to
+        duration: The duration of the recording
         record_flag: The flag - Starts as waiting
 
     Returns: None
     """
-
-    #Calls the method
-    #With parameters passed in as named above
-    #pam_1_power_device.start_stream(file_name=file_name_pam_1, stream_duration=stream_length)
-    pam.start_stream(file_name=filename, stream_duration=STREAM_LENGTH)
-
     #Sets the recording flag as waiting
-    record_flag.wait()
+    stream_func = pam.start_stream
+
+    while not trigger[0]:
+        pass
+
+    stream_func(file_name=filename, stream_duration=duration)
+
+
 
 def csv_combiner(csv_file_1, csv_file_2):
     """
