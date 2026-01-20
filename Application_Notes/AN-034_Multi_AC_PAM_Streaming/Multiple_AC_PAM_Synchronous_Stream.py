@@ -4,22 +4,24 @@ over QIS or over QPS. Either option will export a CSV, which is then merged, and
 
 The application this has been designed for is for a high power environment, where a single AC PAM does not have the
 capability to measure the full load, so 2 AC PAMs are used. Both PAM data streams can be viewed side by side.
-Through testing the de-sync time ranges from 1.125ms to 20ms (Less than 1 cycle at 50Hz mains frequency). This will
-vary with the system, and what programs are open on the machine.
 
-To cut down latency between the stream starts, threading is used. Threading is a way of running multiple processes
-concurrently. Before threading was implemented, there was a latency of between 60ms and 120ms, of 1 stream starting then
-the next starting. A flag is used to start both processes. Through testing, this has been seen at sub 2ms latency.
+To reduce latency from one stream starting to the next stream starting, this script uses a compiled C file to spin
+up 2 CPU cores, and keep them busy, until the start_stream command is called. This requires the use of a compiler -
+GCC recommended. The two streams from both PAMs should start relatively synchronously.
+
+In testing, the desync was typically less than 5ms, with most being less than 1ms between 1 stream starting and the
+next stream starting. This is likely related to network latency.
 
 This AN-034 uses the quarchpy python package and demonstrates
 -Streaming from multiple instruments at the same time
--Threading
+-Using multiple cores in parallel
 -Combining multiple CSVs into a single CSV, with a shared column
 -Manually importing CSVs into QPS for comparison.
 
 ########### VERSION HISTORY ###########
 13/01/2026 - Andrew Steedman - Created
 16/01/2026 - Stuart Boon - Multi-threading
+20/01/2026 - Andrew Steedman - Working with QIS, and semi-automated
 
 ########### REQUIREMENTS ##############
 
@@ -27,34 +29,25 @@ This AN-034 uses the quarchpy python package and demonstrates
     https://www.python.org/downloads/
 2 - Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
-3 - tkinter (Used for GUI)
-    https://docs.python.org/3/library/tkinter.html#
-4 - Control PC, with firewall permissions and admin rights
+3 - GCC (GNU Compiler Collection) - See README.md
+4 - Python packages - psutil, numpy, pandas
 
 ########### INSTRUCTIONS ##############
 
 1 - Connect AC PAMs to the same LAN as control PC
 2 - Connect AC PAMs to power
-3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS,FILE_NAME_COMBINED, STREAM_LENGTH
-4 - Run the script
+3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS, STREAM_LENGTH
+4 - Run the script with admin permissions
 
-#TODO
-Quarchpy QPS API change - enable the scripting of multiple instances, with a separate QIS backend
-Automate the CSV imports into QPS - Manual import works as expected
+#TODO Waiting on next Quarchpy and QPS release/dev branch
+#TODO Update notes and readme
 """
-import time
-import pandas as pd #CSV manipulation
-import psutil
-import os
-import threading #Used for synchronous processes
-
-
-import multiprocessing
-import ctypes
-import subprocess
-import tempfile
+#To add package
+import psutil #OS Priority Setting
 import numpy as np
+import pandas as pd #CSV manipulation
 
+#To add package
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
 from quarchpy.qis import *
@@ -63,31 +56,50 @@ from quarchpy.device import *
 from quarchpy.user_interface import *
 from quarchpy.connection_specific import *
 
-#The name of the file after the 2 pam streams have been combined
-FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
+#Included in default installation
+import time
+import os
+import shutil #Check GCC
+import multiprocessing #Multicore processing
+import ctypes #Allows calling functions into the compiled C code
+import subprocess #Shell commands
+
 
 #USER TO CHANGE - Constants, Should be static while program is running
 # Hardcoded PAM Addresses
 PAM_1_ADDRESS = "TCP:10.0.8.107"
 PAM_2_ADDRESS = "TCP:10.0.8.59"
 
-FILE_NAME_PAM_1 = os.path.join(os.getcwd(),"RawDataPam1.csv")
-FILE_NAME_PAM_2 = os.path.join(os.getcwd(),"RawDataPam2.csv")
-
 #Stream length in seconds - QIS call takes float parameter
 STREAM_LENGTH = float(60)
 #/USER TO CHANGE/
 
-#Strips the TCP: from the Pam address - used for pinging the device to ensure its awake
-ip_address_1 = PAM_1_ADDRESS.split(":")[1]
-ip_address_2 = PAM_2_ADDRESS.split(":")[1]
+#All in Current Working Directory
+#Filename of the CSV output from PAM1
+FILE_NAME_PAM_1 = "RawDataPam1.csv"
+#Absolute path of the CSV OUTPUT from PAM1
+PATH_PAM_1 = os.path.join(os.getcwd(),FILE_NAME_PAM_1)
 
+#Filename of the CSV output from PAM2
+FILE_NAME_PAM_2 = "RawDataPam2.csv"
+#Absolute path of the CSV output from PAM2
+PATH_PAM_2 = os.path.join(os.getcwd(),FILE_NAME_PAM_2)
+
+#The name of the file after the 2 pam streams have been combined
+FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
+
+#Checks if connecting over TCP. If so, create a variable with the IP address
+if PAM_1_ADDRESS.split(":")[0] == "TCP":
+    ip_address_1 = PAM_1_ADDRESS.split(":")[1]
+if PAM_2_ADDRESS.split(":")[0] == "TCP":
+    ip_address_2 = PAM_2_ADDRESS.split(":")[1]
+
+#C Code is different for Windows or POSIX
 C_CODE_WINDOWS = """
 #include <windows.h>
 
 void spin_until(long long target_ns) {
     // We use GetSystemTimePreciseAsFileTime to match Python's time.time_ns()
-    // 134774 seconds offset is not needed if we just look at the raw trend.
 
     while (1) {
         FILETIME ft;
@@ -109,10 +121,20 @@ C_CODE_POSIX = """
 #include <time.h>
 
 void spin_until(long long target_ns) {
+    //Data structure used to represent time with nanosecond precision
+    //Has a seconds component, and nanoseconds component
     struct timespec ts;
+    
+    //Highest precision clock
     while (1) {
+        //Used for unix absolute time
         clock_gettime(CLOCK_MONOTONIC, &ts);
+        
+        //Convert timespec to time now_ns
+        //Convert the timespec seconds to nanoseconds, and add the timespec nanosecond
         long long now_ns = (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+        
+        //If current time is the same as target time, break
         if (now_ns >= target_ns) {
             break;
         }
@@ -122,6 +144,9 @@ void spin_until(long long target_ns) {
 
 
 def main():
+    #Checks if compiler is installed, and provides installation instructions if not
+    gcc_check()
+
     if os.name == "nt": #Windows
         #Tells OS this python script is high priority
         p = psutil.Process(os.getpid())
@@ -137,8 +162,13 @@ def main():
             print("Warning: Run with sudo to enable high-priority timing.")
         C_CODE = C_CODE_POSIX
 
-    #QPS is not currently working - remove option to use QPS
+    else: #If not Windows or Linux, raise an error
+        print("OS not currently supported. Please use a Windows or POSIX system")
+        raise OSError("Unsupported operating system")
+
+    #Currently QIS only. Next Quarchpy release will enable dual QPS streams
     connection_type = "QIS"
+    #TODO - Enable option for synchronous stream over QPS
 
     #If QIS is not already running
     if not isQisRunning():
@@ -149,7 +179,7 @@ def main():
     QisInterface()
 
     #Compiles the C Script
-    print("Compiling...")
+    print("Compiling the C code...")
     lib_path = compile_c_lib(C_CODE)
 
     #Pings the IP Addresses before starting the stream - Comment out if using USB
@@ -157,9 +187,9 @@ def main():
     ping_device(ip_address_2)
 
     if lib_path: #If the C_CODE has compiled correctly
-        print("Compiled successfully, starting stream...")
+        print("Compiled successfully, starting stream in 5 seconds...")
 
-        run_worker_func(lib_path, connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
+        coordinate_multiproc_trigger(lib_path, connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
 
         os.remove(lib_path)
 
@@ -167,9 +197,7 @@ def main():
     print("Combining CSV files...")
 
     #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
-    csv_combiner("RawDataPam1.csv", "RawDataPam2.csv")
-
-    print("\nStream completed successfully\n")
+    csv_combiner()
 
     #PLACEHOLDER
     print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
@@ -184,6 +212,37 @@ def main():
 
     return None
 
+def gcc_check():
+    """
+    Checks if the GNU Compiler Collection is installed
+    Returns None:
+    Raises: ModuleNotFoundError if not installed
+    """
+    gcc_search_cmd = "where" if os.name == "nt" else "which"
+    try:
+        check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+
+        if check.returncode != 0: #Not Found
+            print("******** GCC CHECK FAILED *********\n")
+            print("Error: GNU Compiler Collection not found\n")
+
+            if os.name == "nt": #Changes instructions based on OS
+                print("Please install MinGW-w64")
+                print("Download the MSYS2 Installer - https://www.msys2.org/")
+                print("Open the MSYS2 Terminal and run the command")
+                print("\npacman -S mingw-64-86_64-gcc\n")
+                print(r"Then add C:\msys64\mingw64\bin to the PATH")
+                print("Once installed and added, please re-run")
+            else:
+                print("Please install MinGW-w64")
+                print("On ubuntu please run the command\n")
+                print(r"sudo apt install build-essentia")
+                print("\nOn fedora please run the command\n")
+                print(r"sudo dnf install gcc glibc-devel")
+                print("\nOnce installed and added, please re-run")
+    except:
+        raise ModuleNotFoundError
+
 def compile_c_lib(C_CODE:str):
     """
     Compiles the C code to keep the CPU busy and ready to execute
@@ -194,84 +253,77 @@ def compile_c_lib(C_CODE:str):
 
     """
     #If Windows, look for a .dll (dynamic link library) - else, look for a .so Shared Object file
-    suffix = ".dll" if os.name == "Windows" else ".so"
+    suffix = ".dll" if os.name == "nt" else ".so"
 
-    #Need to rename
-    so_file = os.path.join(os.getcwd(), "timing_lib" + suffix)
-    c_file = os.path.join(os.getcwd(), "timing_lib.c")
+    #Creates the C file in the current working directory
+    c_file = os.path.join(os.getcwd(), "spin_core.c")
 
+    #Opens the c_file and writes the C_CODE to it
     with open(c_file, mode="w") as f:
         f.write(C_CODE)
 
+    #Replaces the .c with .so or .dll
     so_file = c_file.replace(".c", suffix)
 
-    cmd = ["gcc", "-O3", "-shared", "-fPIC", "-o", so_file, c_file]
+    #gcc -O3 -shared -fPIC -o spin_core.dll spin_core.c
+    command = ["gcc", "-O3", "-shared", "-fPIC", "-o", so_file, c_file]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        #Attempts to compile, and records the output
+        subprocess.run(command, check=True, capture_output=True, text=True)
         return so_file
 
     #Catches the potential exception
     except Exception as e:
-        #If opening, writing and compiling the file hasn't worked
         print(f"Compilation Error: {e}")
         return None
 
-def worker_function(target_ns,
-                    so_file,
-                    timestamp,
-                    pam_address:str,
-                    filename:str,
-                    connection_type:str = "QIS",
-                    stream_duration:float = STREAM_LENGTH):
+def sync_and_trigger_stream(target_ns,
+                            so_file,
+                            pam_address:str,
+                            filename:str,
+                            connection_type:str = "QIS",
+                            stream_duration:float = STREAM_LENGTH):
     """
-    This is the worker function. This is executed on different cores for different PAM devices
+    This is a worker function. This is executed on different cores for different PAM devices
     Args:
         target_ns: The time the system aims to execute at
         so_file: The compiled C code
-        timestamp: The shared timestamp
         pam_address: The address of the PAM to be connected to - in the format "TCP:1.1.1.1"
         filename: The file to write to
         connection_type: Default QIS, but can be overwritten to QPS
         stream_duration: Stream length - how long to stream for
 
     Returns None:
-
     """
+
     try:
-        #Connects 1st pam device to the same QIS Instance
-        pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type)
+        #Connects 1st pam device to the same QIS Instance - timeout of 20s
+        pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type, timeout=str(20))
+
         #Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
         pam_power_device = quarchPPM(pam)
+
     except Exception as e:
         print(f"Could not connect to PAM: {e}")
-        sys.stdout.flush()
-
-    if os.name == "nt": #If windows correct for epoch differences
-        # Windows FileTime epoch is different from Unix Epoch
-        # Windows Epoch is 1601, Unix Epoch is 1970 - 11644473600
-        # This is unix epoch (1970) since Windows epoch (1601), expressed in nanoseconds.
-        target_ns = target_ns + (11644473600 * 1000000000)
+        sys.stdout.flush() #Forces output
 
     try:
         #Loads the compiled file
         lib = ctypes.CDLL(so_file)
+
         #Calls the spin_until function inside, keeps CPU busy and ready
         lib.spin_until(ctypes.c_int64(target_ns))
 
         #Starts stream
         pam_power_device.start_stream(file_name=filename, stream_duration=stream_duration)
 
-        #Stores the time after the start_stream command is run successfully
-        #Change for Linux
-        timestamp.value = time.time_ns()
-
     #Catches potential exception
     except Exception as e:
-        print(f"Worker function error: {e}")
-        sys.stdout.flush()
+        print(f"Error triggering stream: {e}")
+        sys.stdout.flush() #Forces output
 
-def run_worker_func(
+def coordinate_multiproc_trigger(
         so_file,
         connection_type:str = "QIS",
         filename_1:str = "RawDataPam1.csv",
@@ -286,37 +338,40 @@ def run_worker_func(
         filename_2: The file of the stream data for PAM 2
         stream_duration: Stream length
 
-    Returns: The difference in start time between process 1 and process 2, in nanoseconds
+    Returns None:
 
     """
-    #Returns a ctypes object allocated from shared memory - allows other processes
-    result1 = multiprocessing.Value(ctypes.c_longlong, 0, lock=False)
-    result2 = multiprocessing.Value(ctypes.c_longlong, 0, lock=False)
+    if os.name == "nt": #If windows correct for epoch differences
+        # Windows FileTime epoch is different from Unix Epoch
+        # Windows Epoch is 1601, Unix Epoch is 1970 - The difference is 11 644 473 600 seconds
+        # This is unix epoch (1970) since Windows epoch (1601), expressed in nanoseconds.
+        epoch_correction_ns = (11644473600 * 1000000000)
 
-    #Time now in ns, plus 5 seconds in nanoseconds - Allows connection to form
-    #Change for Linux
-    target = time.time_ns() + int(5*1e9)
+        #Add a 5 seconds delay
+        target = time.time_ns() + int(5*1e9) + epoch_correction_ns
+
+    else:
+        #CLOCK_MONOTONIC is the absolute elapsed time since system boot
+        target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5*1e9)
 
     #Creates Process objects
-    process1 = multiprocessing.Process(target=worker_function, args=(target, so_file, result1, PAM_1_ADDRESS, filename_1, connection_type, stream_duration))
-    process2 = multiprocessing.Process(target=worker_function, args=(target, so_file, result2, PAM_2_ADDRESS, filename_2, connection_type, stream_duration))
+    process1 = multiprocessing.Process(target=sync_and_trigger_stream, args=(target, so_file, PAM_1_ADDRESS, filename_1, connection_type, stream_duration))
+    process2 = multiprocessing.Process(target=sync_and_trigger_stream, args=(target, so_file, PAM_2_ADDRESS, filename_2, connection_type, stream_duration))
 
     #Starts the processes activity
     process1.start()
     process2.start()
 
+    #Shows progress bar for stream length with an extra 5 seconds
+    visual_sleep((STREAM_LENGTH+5), title="Stream in progress")
+
     #Blocks the main script until both processes are done
     process1.join()
     process2.join()
 
-    #Prints and returns the difference in start times between process 1 and process 2 in nanoseconds
-    print(abs(result1.value - result2.value))
-    return abs(result1.value - result2.value)
-
 def ping_device(ip_address:str):
     """
     Pings the specified IP address, to ensure the device is awake and ready to connect
-    1 ping only
     Args:
         ip_address: The IP address to ping
 
@@ -328,7 +383,9 @@ def ping_device(ip_address:str):
     try:
         param = "-n" if os.name == "nt" else "-c"
         command = ["ping", param, "1", ip_address]
-        subprocess.run(command, stdout=subprocess.PIPE)
+        #Execute the command, capture the output
+        subprocess.run(command, capture_output=True, text=True)
+
     except Exception as e:
         print(f"IP Ping error: {e}")
 
@@ -371,6 +428,7 @@ def open_qps_to_view_csv():
     Used for user to view the CSVs as QPS Traces - currently semi-automated process
 
     Returns: None
+    #TODO - Fully automate with next QPS release
 
     """
     #Starts Local QPS instance
