@@ -31,6 +31,7 @@ This AN-034 uses the quarchpy python package and demonstrates
     https://quarch.com/products/quarchpy-python-package/
 3 - GCC (GNU Compiler Collection) - See README.md
 4 - Python packages - psutil, numpy, pandas
+5- A multicore processor (2 minimum)
 
 ########### INSTRUCTIONS ##############
 

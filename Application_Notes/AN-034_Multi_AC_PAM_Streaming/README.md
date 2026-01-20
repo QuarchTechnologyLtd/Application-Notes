@@ -21,7 +21,9 @@ This AN-034 uses the quarchpy python package and demonstrates
 ## Requirements
 ### Hardware
 - 2x AC PAMs 
-- Host PC with firewall permissions (Windows or POSIX)
+- Host PC 
+  - Multiple cores (2 minimum)
+  - firewall permissions (Windows or POSIX)
 - LAN Connection to both modules
 
 ### Software
