@@ -44,7 +44,7 @@ import time  # Used for sleep commands
 import logging  # Optionally used to create a log to help with debugging
 import pandas as pd
 import numpy as np
-
+import quarchpy
 from quarchpy.device import *
 from quarchpy.qis import *
 from quarchpy.user_interface.user_interface import quarchSleep
@@ -52,16 +52,14 @@ from quarchpy.user_interface.user_interface import quarchSleep
 #import library used to store in-memory csv data
 from io import StringIO
 
-'''
-Select the device you want to connect to here!
-'''
-
+# # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+# # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+# logging.basicConfig(level=logging.DEBUG)
+# # To control specifically the quarchpy console log level use the following line:
+# quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+# # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
 def main():
-    # If required you can enable python logging, quarchpy supports this and your log file
-    # will show the process of scanning devices and sending the commands.  Just comment out
-    # the line below.  This can be useful to send to quarch if you encounter errors
-    # logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
 
     print("\n\nQuarch application note example: AN-029")
     print("---------------------------------------\n\n")

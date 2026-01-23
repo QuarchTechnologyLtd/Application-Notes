@@ -34,14 +34,16 @@ This uses the quarchpy python package and demonstrates
 
 ####################################
 '''
+import sys
 
 # Import other libraries used in the examples
 import time     # Used for sleep commands
 import logging  # Optionally used to create a log to help with debugging
-
 # '.device' provides connection and control of modules
 from quarchpy.device import *
 from quarchpy.user_interface import user_interface
+import quarchpy
+
 
 ''' 
 Simple example code, showing connection and control of almost any module.
@@ -51,27 +53,31 @@ which are specific to a given product range
 '''
 def main():
 
-    # If required you can enable python logging, quarchpy supports this and your log file
-    # will show the process of scanning devices and sending the commands.  Just comment out
-    # the line below.  This can be useful to send to quarch if you encounter errors
-    # logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
-    
+    # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+    # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+    # logging.basicConfig(level=logging.DEBUG)
+    # # To control specifically the quarchpy console log level use the following line:
+    # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
+
     print ("Quarch application note example: AN-006")
     print ("---------------------------------------\n\n")
 
-    # Scan for quarch devices over all connection types (USB, Serial and LAN)
-    print ("Scanning for devices...\n")
-    deviceList = scanDevices('all', favouriteOnly=False)
 
-    # You can work with the deviceList dictionary yourself, or use the inbuilt 'selector' functions to help
-    # Here we use the user selection function to display the list on screen and return the module connection string
-    # for the selected device
-    moduleStr = userSelectDevice(deviceList,additionalOptions = ["Rescan","All Conn Types","Quit"], nice=True)
-    if moduleStr == "quit":
-        return 0
 
     # If you know the name of the module you would like to talk to then you can skip module selection and hardcode the string.
-    #moduleStr = "USB:QTL1999-05-005"
+    moduleStr = "USB:QTL2312-01-263"
+    if moduleStr ==None or "qtl" not in moduleStr.lower(): # If the module string is not set, scan, and select one.
+        # Scan for quarch devices over all connection types (USB, Serial and LAN)
+        print ("Scanning for devices...\n")
+        deviceList = scanDevices('all', favouriteOnly=False)
+
+        # You can work with the deviceList dictionary yourself, or use the inbuilt 'selector' functions to help
+        # Here we use the user selection function to display the list on screen and return the module connection string
+        # for the selected device
+        moduleStr = userSelectDevice(deviceList,additionalOptions = ["Rescan","All Conn Types","Quit"], nice=True)
+        if moduleStr == "quit":
+            return 0
 
     # Create a device using the module connection string
     print("\n\nConnecting to the selected device")
@@ -93,7 +99,7 @@ def selectTests(myDevice):
     # Create a list of test that can be selected
     listOfTests = ["QuarchSimpleIdentify", "QuarchArrayExample", "QuarchHotPlugExample", "QuarchSwitchExample", "QuarchPowerMarginingExample", "PowerTest"]
     # Pass the list to QuarchPy's listSelection function.
-    testSelectList = user_interface.listSelection(message="Enter the number for the test you would like to run",selectionList=listOfTests, nice = True, tableHeaders=["Test Name"], indexReq=True, align="l")
+    testSelectList = "PowerTest"#user_interface.listSelection(message="Enter the number for the test you would like to run",selectionList=listOfTests, nice = True, tableHeaders=["Test Name"], indexReq=True, align="l")
 
     # Identify what test has been selected and run it
     if testSelectList == "QuarchSimpleIdentify":

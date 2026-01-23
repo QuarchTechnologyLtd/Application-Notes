@@ -28,6 +28,13 @@ import quarchpy
 from intel_custom import HdStreamer
 from quarchpy.device import *
 
+# # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+# # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+# logging.basicConfig(level=logging.DEBUG)
+# # To control specifically the quarchpy console log level use the following line:
+# quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+# # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
+
 # Path where stream will be saved to (defaults to current script path)
 streamPath = os.path.dirname(os.path.realpath(__file__))
 

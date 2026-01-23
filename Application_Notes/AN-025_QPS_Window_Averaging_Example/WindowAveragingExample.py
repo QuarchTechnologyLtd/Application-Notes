@@ -31,7 +31,6 @@ worst case active power consumption, using a user specified averaging window.
 ####################################
 """
 
-
 import time
 import math
 import logging
@@ -41,6 +40,13 @@ from collections import deque
 from datetime import datetime
 from quarchpy.qis import *
 from quarchpy import qisInterface
+
+# # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+# # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+# logging.basicConfig(level=logging.DEBUG)
+# # To control specifically the quarchpy console log level use the following line:
+# quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+# # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
 '''
 Main function, containing the example code to execute.
@@ -53,8 +59,6 @@ def main():
     # Version 2.0.20 or higher expected for this application note
     quarchpy.requiredQuarchpyVersion ("2.0.20")
 
-    # Enable logging
-    logging.basicConfig (filename="app.log", filemode='w', level=logging.DEBUG)
 
     ######################################################
     # The source of the data can be already present, but
