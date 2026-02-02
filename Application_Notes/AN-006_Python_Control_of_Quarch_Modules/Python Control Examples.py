@@ -97,7 +97,7 @@ def selectTests(myDevice):
     # Create a list of test that can be selected
     listOfTests = ["QuarchSimpleIdentify", "QuarchArrayExample", "QuarchHotPlugExample", "QuarchSwitchExample", "QuarchPowerMarginingExample", "PowerTest"]
     # Pass the list to QuarchPy's listSelection function.
-    testSelectList = "PowerTest"#user_interface.listSelection(message="Enter the number for the test you would like to run",selectionList=listOfTests, nice = True, tableHeaders=["Test Name"], indexReq=True, align="l")
+    user_interface.listSelection(message="Enter the number for the test you would like to run",selectionList=listOfTests, nice = True, tableHeaders=["Test Name"], indexReq=True, align="l")
 
     # Identify what test has been selected and run it
     if testSelectList == "QuarchSimpleIdentify":
@@ -457,5 +457,6 @@ def setupPowerOutput(myModule):
 
 if __name__== "__main__":
     main()
+
 
 
