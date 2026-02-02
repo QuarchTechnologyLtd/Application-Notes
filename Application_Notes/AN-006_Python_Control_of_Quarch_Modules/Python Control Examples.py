@@ -34,8 +34,6 @@ This uses the quarchpy python package and demonstrates
 
 ####################################
 '''
-import sys
-
 # Import other libraries used in the examples
 import time     # Used for sleep commands
 import logging  # Optionally used to create a log to help with debugging
@@ -459,3 +457,4 @@ def setupPowerOutput(myModule):
 
 if __name__== "__main__":
     main()
+
