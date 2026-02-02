@@ -64,7 +64,7 @@ def main():
 
 
     # If you know the name of the module you would like to talk to then you can skip module selection and hardcode the string.
-    moduleStr = "USB:QTL2312-01-263"
+    #moduleStr = "USB:2312-01-263"
     if moduleStr ==None or "qtl" not in moduleStr.lower(): # If the module string is not set, scan, and select one.
         # Scan for quarch devices over all connection types (USB, Serial and LAN)
         print ("Scanning for devices...\n")
@@ -457,4 +457,5 @@ def setupPowerOutput(myModule):
 
 if __name__== "__main__":
     main()
+
 
