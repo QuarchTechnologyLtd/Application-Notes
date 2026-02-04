@@ -49,7 +49,6 @@ from quarchpy.user_interface.user_interface import showDialog, requestDialog
 
 def main():
 
-
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
     # logging.basicConfig(level=logging.DEBUG)
@@ -98,50 +97,17 @@ def main():
     setupPowerOutput(myQpsDevice)
 
     # Set the resampling rate for the module. This sets the resolution of data to record.
-    # This is done via the QIS command "stream mode resample ... ".
+    # This is done via the QPS command "stream mode resample ... ".
+    print(myQpsDevice.sendCommand("stream mode resample 1ms"))
+    # # On a multirate device groups can be resampled separately as show here:
     # print(myQpsDevice.sendCommand("stream mode resample group 0 132ms"))
     # print(myQpsDevice.sendCommand("stream mode resample group 1 132ms"))
-    print(myQpsDevice.sendCommand("stream mode resample 1ms"))
 
     # Start a stream, using the local folder of the script and a time-stamp file name in this example
     fileName = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
     myStream = myQpsDevice.startStream(os.path.join(filePath, fileName))
     print("File output path set: " + str(os.path.join(filePath, fileName)))
 
-    '''
-    Example of adding annotations to the trace.  This can be used to highlight events, errors or
-    changes from one part of a test to another.
-    
-    Annotations can be added in real time, or placed anywhere on the trace as part of post-processing,
-    using a timestamp.
-    
-    The following function is used to add an annotation to Quarch Power Studio (QPS). 
-    
-    def addAnnotation(self,
-                  title: str,
-                  annotationTime: int | str = 0,
-                  extraText: str = "",
-                  yPos: int | str = "",
-                  titleColor: str = "",
-                  annotationColor: str = "",
-                  annotationType: str = "",
-                  annotationGroup: str = "",
-                  timeFormat: str = "unix") -> str
-    
-    Params:
-    title – The primary text label for the annotation.
-    annotationTime – Timestamp. Defaults to 0 ("now").
-    extraText – Additional text. Defaults to "".
-    yPos – Vertical position (0-100). Defaults to "".
-    titleColor – Hex color for the title. Defaults to "".
-    annotationColor – Hex color for the marker. Defaults to "".
-    annotationType – "annotate" or "comment". Defaults to "".
-    annotationGroup – Not used. Defaults to "".
-    timeFormat – "unix" or "elapsed". Defaults to "unix".
-    
-    Returns:
-    The response message from the QPS device
-    '''
     time.sleep(2)
     myStream.addAnnotation('Adding an example annotation\\nIn real time!')
     time.sleep(1)
@@ -149,55 +115,22 @@ def main():
     myStream.addAnnotation('Adding an example annotation\\nAt a specific time!', annotation_time)
     time.sleep(1)
 
-    '''
-    Example of adding arbitrary data to the trace.  This allows IOPS, Temperature and similar to be added
-    where the data may be polled live from another process, or added in post-process.
-    
-    Channels need a name (T1 in this example) a 'group' name and a unit of measure.
-    The final boolean will create auto SI unit ranges (milli/micro...) automatically if set to true.
-    
-    The following function is used to create a channel in QPS.
-    
-    def createChannel(self,
-                  channelName: str,
-                  channelGroup: str,
-                  baseUnits: str,
-                  usePrefix: bool) -> str
- 
-    Params:
-    channelName – The name for the new channel.
-    channelGroup – The group to associate the channel with.
-    baseUnits – The fundamental unit for the channel.
-    usePrefix – If True, allows channel prefixes.
-    
-    Returns:
-    The response message from the QPS device.
-    '''
-    myStream.addAnnotation('Starting temperature measurement here!')
 
     # Create new channel to record data into
     print("creating custom channels ...")
-    response = myStream.createChannel('T1', 'Temp', 'C', False)
+    response = myStream.createChannel('T1', 'Temp', 'C', False) # For Temp data
     print("command response: " + response)
-    response = myStream.createChannel('T2', 'Temp', 'C', False)
+    response = myStream.createChannel('T2', 'Temp', 'C', False) # Channel in the same group with no data
     print("command response: " + response)
-    time.sleep(1)
-
     response = myStream.createChannel('Fan1', 'Fans', 'RPM', False)
     print("command response: " + response)
-
-    #
-    add_annotations(myStream, 'T1', 'Temp')
-    #
-
-    myStream.addAnnotation('Starting fan speed measurement here!')
+    time.sleep(1) # waiting 1s to allow QPS to add the channels before we start adding data to them.
 
     # Write some example temperature data into the channel
     writeArbitraryData_Temp(myStream, 'T1', 'Temp')
 
     # Write some example fan speed data into the channel
     writeArbitraryData_Fans(myStream, 'Fan1', 'Fans')
-
     time.sleep(1)
 
     # Statistics can be fetched from QPS. Stats show the channel data between annotations.
@@ -205,20 +138,21 @@ def main():
     print(myStream.get_stats())
 
     # End the stream
-    time.sleep(30)
+    time.sleep(10)
     myStream.stopStream()
-    showDialog("End of test.")  # From quarchpy userinterface class. Which handles py2 and py3 compatibility.
+    showDialog("End of test. Press enter to close QPS")  # showDialog is from quarchpy userinterface class. Which handles py2 and py3 compatibility.
     closeQPS()
 
 
-'''
-Simple function to check the output mode of the power module, setting it to 3v3 if required
-then enabling the outputs if not already done.  This will result in the module being turned on
-and supplying power.
-'''
+
 
 
 def setupPowerOutput(myModule):
+    '''
+    Simple function to check the output mode of the power module, setting it to 3v3 if required
+    then enabling the outputs if not already done.  This will result in the module being turned on
+    and supplying power.
+    '''
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
     outModeStr = myModule.sendCommand("config:output mode?")
     if "DISABLED" in outModeStr:
@@ -235,75 +169,48 @@ def setupPowerOutput(myModule):
         print("\n Turning the outputs on:"), myModule.sendCommand("run:power up"), "!"
 
 
-'''
-Example function to write data to an arbitrary channel that has been previously created
-This data would normally come from another process such as drive monitor software or
-a traffic generator.
-'''
+
 
 
 def writeArbitraryData_Temp(myStream, channelName, groupName):
+    '''
+    Example function to write data to an arbitrary channel that has been previously created
+    This data would normally come from another process such as drive monitor software or
+    a traffic generator.
+    '''
     print("Writings 10 seconds worth of (made up) temperature data, please wait...")
-
     # Add a few temperature points to the stream at 1 second intervals
     driveTemp = 18
-    for x in range(0, 10):
-        '''
-        The following function is used to add a single data point for a specified custom channel. 
-
-        def addDataPoint(self,
-                 channelName: str,
-                 groupName: str,
-                 dataValue: int | float,
-                 dataPointTime: int | str = 0,
-                 timeFormat: str = "unix") -> None
-
-        Params:
-        channelName – The name of the custom channel to add data to.
-        groupName – The group associated with the channel (must match creation).
-        dataValue – The numeric value of the data point.
-        dataPointTime – The timestamp for the data point.
-        timeFormat – The format of the given time ["elapsed"|"unix"].
-        '''
+    myStream.addAnnotation('Starting temperature measurement here!')
+    for x in range(0, 19):
         myStream.addDataPoint(channelName, groupName, str(driveTemp))
         driveTemp = driveTemp + 0.8
         time.sleep(1)
+        if (x % 10 == 9): #every 10 loops add an endSeq which stops linier interpolation between points.
+            myStream.addDataPoint(channelName, groupName, str("endseq"))
+            time.sleep(5)
     time.sleep(1)
     # Add a final time point at a specific time to demonstrate random addition of points
     last_reading_time = int(time.time() * 1000)  # time in milliseconds
-    myStream.addDataPoint(channelName, groupName, str(driveTemp), last_reading_time)
+    myStream.addDataPoint(channelName, groupName, str("endseq"), last_reading_time)
 
 
-'''
-Example function to write data to an arbitrary channel that has been previously created
-This data would normally come from another process such as drive monitor software or
-a traffic generator.
-'''
+
 
 
 def writeArbitraryData_Fans(myStream, channelName, groupName):
+    '''
+    Example function to write data to an arbitrary channel that has been previously created
+    This data would normally come from another process such as drive monitor software or
+    a traffic generator.
+    '''
     print("Writings 10 seconds worth of (made up) fan data, please wait...")
-
     # Add a few rpm points to the stream at 1 second intervals
     fanRPM = 11
+    myStream.addAnnotation('Starting fan speed measurement here!')
+
     for x in range(0, 10):
-        '''
-        The following function is used to add a single data point for a specified custom channel. 
-        
-        def addDataPoint(self,
-                 channelName: str,
-                 groupName: str,
-                 dataValue: int | float,
-                 dataPointTime: int | str = 0,
-                 timeFormat: str = "unix") -> None
-        
-        Params:
-        channelName – The name of the custom channel to add data to.
-        groupName – The group associated with the channel (must match creation).
-        dataValue – The numeric value of the data point.
-        dataPointTime – The timestamp for the data point.
-        timeFormat – The format of the given time ["elapsed"|"unix"].
-        '''
+
         myStream.addDataPoint(channelName, groupName, str(fanRPM))
         fanRPM = fanRPM + 1.25
         time.sleep(1)
@@ -311,13 +218,6 @@ def writeArbitraryData_Fans(myStream, channelName, groupName):
     # Add a final time point at a specific time to demonstrate random addition of points
     last_reading_time = int(time.time() * 1000)  # time in milliseconds
     myStream.addDataPoint(channelName, groupName, str(fanRPM), last_reading_time)
-
-
-def add_annotations(myStream, channelName, groupName):
-    num_annotations = 10
-    for i in range(0, num_annotations):
-        myStream.addDataPoint(channelName, groupName, str(i))
-
 
 # Calling the main() function
 if __name__ == "__main__":
