@@ -1,7 +1,7 @@
 """
 AN-015 - Application note demonstrating automated control over Quarch Power Studio (QPS)
 
-This example demonstrates adding annotations and datapoints to a QPS stream.
+This example demonstrates adding annotations and data points to a QPS stream.
 
 ########### VERSION HISTORY ###########
 1
@@ -68,7 +68,7 @@ def main():
 
     # Checks if QPS is running on the localhost
     if isQpsRunning() is False:
-        # Start QPS from quarchpy
+        # Start QPS from QuarchPy
         startLocalQps()
 
     # Connect to the localhost QPS instance - you can also specify host='127.0.0.1' and port=xxxx for remote control.
@@ -115,7 +115,6 @@ def main():
     myStream.addAnnotation('Adding an example annotation\\nAt a specific time!', annotation_time)
     time.sleep(1)
 
-
     # Create new channel to record data into
     print("creating custom channels ...")
     response = myStream.createChannel('T1', 'Temp', 'C', False) # For Temp data
@@ -124,7 +123,7 @@ def main():
     print("command response: " + response)
     response = myStream.createChannel('Fan1', 'Fans', 'RPM', False)
     print("command response: " + response)
-    time.sleep(1) # waiting 1s to allow QPS to add the channels before we start adding data to them.
+    time.sleep(1) # waiting 1s to allow QPS to add the channels before we start adding data to them
 
     # Write some example temperature data into the channel
     writeArbitraryData_Temp(myStream, 'T1', 'Temp')
@@ -140,7 +139,7 @@ def main():
     # End the stream
     time.sleep(10)
     myStream.stopStream()
-    showDialog("End of test. Press enter to close QPS")  # showDialog is from quarchpy userinterface class. Which handles py2 and py3 compatibility.
+    showDialog("End of test. Press enter to close QPS")  # showDialog is from QuarchPy user interface class, which handles py2 and py3 compatibility
     closeQPS()
 
 
@@ -156,7 +155,7 @@ def setupPowerOutput(myModule):
     # Output mode is set automatically on HD modules using an HD fixture, otherwise we will chose 5V mode for this example
     outModeStr = myModule.sendCommand("config:output mode?")
     if "DISABLED" in outModeStr:
-        # From quarchpy userinterface class. Which handles py2 and py3 compatibility.
+        # From QuarchPy user interface class. Which handles py2 and py3 compatibility.
         drive_voltage = requestDialog(
             message="\n Either using an HD without an intelligent fixture or an XLC.\n \n>>> Please select a voltage [3V3, 5V]: ")
         myModule.sendCommand("config:output:mode:" + drive_voltage)
@@ -186,7 +185,7 @@ def writeArbitraryData_Temp(myStream, channelName, groupName):
         myStream.addDataPoint(channelName, groupName, str(driveTemp))
         driveTemp = driveTemp + 0.8
         time.sleep(1)
-        if (x % 10 == 9): #every 10 loops add an endSeq which stops linier interpolation between points.
+        if (x % 10 == 9): # every 10 loops add an endSeq which stops linear interpolation between points
             myStream.addDataPoint(channelName, groupName, str("endseq"))
             time.sleep(5)
     time.sleep(1)
@@ -210,7 +209,6 @@ def writeArbitraryData_Fans(myStream, channelName, groupName):
     myStream.addAnnotation('Starting fan speed measurement here!')
 
     for x in range(0, 10):
-
         myStream.addDataPoint(channelName, groupName, str(fanRPM))
         fanRPM = fanRPM + 1.25
         time.sleep(1)
@@ -218,6 +216,7 @@ def writeArbitraryData_Fans(myStream, channelName, groupName):
     # Add a final time point at a specific time to demonstrate random addition of points
     last_reading_time = int(time.time() * 1000)  # time in milliseconds
     myStream.addDataPoint(channelName, groupName, str(fanRPM), last_reading_time)
+
 
 # Calling the main() function
 if __name__ == "__main__":
