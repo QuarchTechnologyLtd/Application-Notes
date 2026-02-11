@@ -39,9 +39,6 @@ This AN-034 uses the quarchpy python package and demonstrates
 2 - Connect AC PAMs to power
 3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS, STREAM_LENGTH
 4 - Run the script with admin permissions
-
-#TODO Waiting on next Quarchpy and QPS release/dev branch
-#TODO Update notes and readme
 """
 #To add package
 import psutil #OS Priority Setting
