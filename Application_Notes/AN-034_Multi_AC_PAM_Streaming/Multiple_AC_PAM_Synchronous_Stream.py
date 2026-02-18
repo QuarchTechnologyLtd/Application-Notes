@@ -40,6 +40,7 @@ This AN-034 uses the quarchpy python package and demonstrates
 3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS, STREAM_LENGTH
 4 - Run the script with admin permissions
 """
+
 #To add package
 import psutil #OS Priority Setting
 import numpy as np
@@ -48,6 +49,7 @@ import pandas as pd #CSV manipulation
 #To add package
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
+from quarchpy.debug.versionCompare import requiredQuarchpyVersion
 from quarchpy.qis import *
 from quarchpy.qps import *
 from quarchpy.device import *
@@ -61,6 +63,7 @@ import shutil #Check GCC
 import multiprocessing #Multicore processing
 import ctypes #Allows calling functions into the compiled C code
 import subprocess #Shell commands
+from abc import ABC, abstractmethod
 
 
 #USER TO CHANGE - Constants, Should be static while program is running
@@ -85,6 +88,8 @@ PATH_PAM_2 = os.path.join(os.getcwd(),FILE_NAME_PAM_2)
 
 #The name of the file after the 2 pam streams have been combined
 FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
+
+QPS_RECORDING = os.path.join(os.getcwd(),"DualPamStream.qps")
 
 #Checks if connecting over TCP. If so, create a variable with the IP address
 if PAM_1_ADDRESS.split(":")[0] == "TCP":
@@ -140,56 +145,52 @@ void spin_until(long long target_ns) {
 }
 """
 
-
 def main():
-    #Checks if compiler is installed, and provides installation instructions if not
-    gcc_check()
-
-    if os.name == "nt": #Windows
-        #Tells OS this python script is high priority
-        p = psutil.Process(os.getpid())
-        p.nice(psutil.HIGH_PRIORITY_CLASS)
-
-        #Sets the code to be compiled as the windows variant
-        C_CODE = C_CODE_WINDOWS
-
-    elif os.name == "posix": #POSIX
-        try:
-            os.nice(-20) #Sets this script as highest priority
-        except PermissionError:
-            print("Warning: Run with sudo to enable high-priority timing.")
-        C_CODE = C_CODE_POSIX
-
-    else: #If not Windows or Linux, raise an error
-        print("OS not currently supported. Please use a Windows or POSIX system")
-        raise OSError("Unsupported operating system")
-
+    requiredQuarchpyVersion("2.2.17")
     #Currently QIS only. Next Quarchpy release will enable dual QPS streams
-    connection_type = "QIS"
-    #TODO - Enable option for synchronous stream over QPS
+    qis_or_qps = showYesNoDialog("QPS or QIS", "Yes for QPS, no for QIS")
+    if qis_or_qps:
+        connection_type = "QPS"
 
-    #If QIS is not already running
-    if not isQisRunning():
-        #Start Local QIS Instance
-        startLocalQis()
+    else:
+        connection_type = "QIS"
 
-    #Connects to the localhost QIS instance
-    QisInterface()
+        # If QIS is not already running
+        if not isQisRunning():
+            # Start Local QIS Instance
+            startLocalQis()
 
-    #Compiles the C Script
-    print("Compiling the C code...")
-    lib_path = compile_c_lib(C_CODE)
+        # Connects to the localhost QIS instance
+        QisInterface()
 
-    #Pings the IP Addresses before starting the stream - Comment out if using USB
-    ping_device(ip_address_1)
-    ping_device(ip_address_2)
+    #Asks if user wants to use a C compiler or standard python
+    #If yes, checks C Compiler is installed and accessible
+    c_compiler = use_c_compiler()
 
-    if lib_path: #If the C_CODE has compiled correctly
-        print("Compiled successfully, starting stream in 5 seconds...")
+    if c_compiler:
+        #gcc_check()
 
-        coordinate_multiproc_trigger(lib_path, connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
+        if os.name == "nt": #Windows
+            #c_windows(connection_type)
 
-        os.remove(lib_path)
+        elif os.name == "posix": #POSIX
+            #c_posix(connection_type)
+
+        else: #If not Windows or Linux, raise an error
+            print("OS not currently supported. Please use a Windows or POSIX system")
+            raise OSError("Unsupported operating system")
+
+    #else: #Python only
+        #if os.name == "nt":  # Windows
+            #python_windows(connection_type)
+
+        #elif os.name == "posix":  # POSIX
+            #python_posix(connection_type)
+
+        #else:  # If not Windows or Linux, raise an error
+            #print("OS not currently supported. Please use a Windows or POSIX system")
+            #raise OSError("Unsupported operating system")
+
 
     print("Stream completed\n")
     print("Combining CSV files...")
@@ -210,162 +211,265 @@ def main():
 
     return None
 
-def gcc_check():
-    """
-    Checks if the GNU Compiler Collection is installed
-    Returns None:
-    Raises: ModuleNotFoundError if not installed
-    """
-    gcc_search_cmd = "where" if os.name == "nt" else "which"
-    try:
-        check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+#def python_windows(connection_type):
 
-        if check.returncode != 0: #Not Found
-            print("******** GCC CHECK FAILED *********\n")
-            print("Error: GNU Compiler Collection not found\n")
+#def python_posix(connection_type):
 
-            if os.name == "nt": #Changes instructions based on OS
+class UsingC(ABC):
+    @abstractmethod
+    def compiler_check(self):
+        pass
+
+    def stream(self, lib_path, connection_type):
+        # Pings the IP Addresses before starting the stream - Comment out if using USB
+        ping_device(ip_address_1)
+        ping_device(ip_address_2)
+
+        if lib_path:  # If the C_CODE has compiled correctly
+            print("Compiled successfully, starting stream in 5 seconds...")
+
+            self.coordinate_multiproc_trigger(lib_path, connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
+
+            os.remove(lib_path)
+
+    def compile_c_lib(self, C_CODE: str):
+        """
+        Compiles the C code to keep the CPU busy and ready to execute
+        Args:
+            C_CODE: The C Code to be compiled - different whether Windows or Linux
+
+        Returns: so_file - The compiled C code
+
+        """
+        # If Windows, look for a .dll (dynamic link library) - else, look for a .so Shared Object file
+        suffix = ".dll" if os.name == "nt" else ".so"
+
+        # Creates the C file in the current working directory
+        c_file = os.path.join(os.getcwd(), "spin_core.c")
+
+        # Opens the c_file and writes the C_CODE to it
+        with open(c_file, mode="w") as f:
+            f.write(C_CODE)
+
+        # Replaces the .c with .so or .dll
+        so_file = c_file.replace(".c", suffix)
+
+        # gcc -O3 -shared -fPIC -o spin_core.dll spin_core.c
+        command = ["gcc", "-O3", "-shared", "-fPIC", "-o", so_file, c_file]
+
+        try:
+            # Attempts to compile, and records the output
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            return so_file
+
+        # Catches the potential exception
+        except Exception as e:
+            print(f"Compilation Error: {e}")
+            return None
+
+    def sync_and_trigger_stream_c(self,
+                                  target_ns,
+                                  so_file,
+                                  pam_address: str,
+                                  filename: str,
+                                  connection_type: str = "QIS",
+                                  stream_duration: float = STREAM_LENGTH):
+        """
+        This is a worker function. This is executed on different cores for different PAM devices
+        Args:
+            target_ns: The time the system aims to execute at
+            so_file: The compiled C code
+            pam_address: The address of the PAM to be connected to - in the format "TCP:1.1.1.1"
+            filename: The file to write to
+            connection_type: Default QIS, but can be overwritten to QPS
+            stream_duration: Stream length - how long to stream for
+
+        Returns None:
+        """
+
+        try:
+            # Connects 1st pam device to the same QIS Instance - timeout of 20s
+            pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type, timeout=str(20))
+
+            # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
+            pam_power_device = quarchPPM(pam)
+
+        except Exception as e:
+            print(f"Could not connect to PAM: {e}")
+            sys.stdout.flush()  # Forces output
+
+        try:
+            # Loads the compiled file
+            lib = ctypes.CDLL(so_file)
+
+            # Calls the spin_until function inside, keeps CPU busy and ready
+            lib.spin_until(ctypes.c_int64(target_ns))
+
+            # Starts stream
+            pam_power_device.start_stream(file_name=filename, stream_duration=stream_duration)
+
+        # Catches potential exception
+        except Exception as e:
+            print(f"Error triggering stream: {e}")
+            sys.stdout.flush()  # Forces output
+
+    def coordinate_multiproc_trigger(
+            self,
+            so_file,
+            connection_type: str = "QIS",
+            filename_1: str = "RawDataPam1.csv",
+            filename_2: str = "RawDataPam2.csv",
+            stream_duration: float = STREAM_LENGTH):
+        """
+        The worker function to be called
+        Args:
+            so_file: The compiled C code
+            connection_type: Default QIS, but can be overwritten to QPS
+            filename_1: The file of the stream data for PAM 1
+            filename_2: The file of the stream data for PAM 2
+            stream_duration: Stream length
+
+        Returns None:
+
+        """
+        if os.name == "nt":  # If windows correct for epoch differences
+            # Windows FileTime epoch is different from Unix Epoch
+            # Windows Epoch is 1601, Unix Epoch is 1970 - The difference is 11 644 473 600 seconds
+            # This is unix epoch (1970) since Windows epoch (1601), expressed in nanoseconds.
+            epoch_correction_ns = (11644473600 * 1000000000)
+
+            # Add a 5 seconds delay
+            target = time.time_ns() + int(5 * 1e9) + epoch_correction_ns
+
+        else:
+            # CLOCK_MONOTONIC is the absolute elapsed time since system boot
+            target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5 * 1e9)
+
+        # Creates Process objects
+        process1 = multiprocessing.Process(target=self.sync_and_trigger_stream_c,
+                                           args=(target, so_file, PAM_1_ADDRESS, filename_1, connection_type,
+                                                 stream_duration))
+        process2 = multiprocessing.Process(target=self.sync_and_trigger_stream_c,
+                                           args=(target, so_file, PAM_2_ADDRESS, filename_2, connection_type,
+                                                 stream_duration))
+
+        # Starts the processes activity
+        process1.start()
+        process2.start()
+
+        # Shows progress bar for stream length with an extra 5 seconds
+        visual_sleep((STREAM_LENGTH + 5), title="Stream in progress")
+
+        # Blocks the main script until both processes are done
+        process1.join()
+        process2.join()
+
+
+
+class CWindows(UsingC):
+    def __init__(self):
+        super().__init__(self)
+
+        # Tells OS this python script is high priority
+        p = psutil.Process(os.getpid())
+        p.nice(psutil.HIGH_PRIORITY_CLASS)
+
+        #Compiles the C Script
+        print("Compiling the C code...")
+        lib_path = self.compile_c_lib(C_CODE_WINDOWS)
+
+    def compiler_check(self):
+        gcc_search_cmd = "where"
+
+        try:
+            check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+            if check.returncode != 0:  # Not Found
+                print("******** GCC CHECK FAILED *********\n")
+                print("Error: GNU Compiler Collection not found\n")
                 print("Please install MinGW-w64")
                 print("Download the MSYS2 Installer - https://www.msys2.org/")
                 print("Open the MSYS2 Terminal and run the command")
                 print("\npacman -S mingw-64-86_64-gcc\n")
                 print(r"Then add C:\msys64\mingw64\bin to the PATH")
                 print("Once installed and added, please re-run")
-            else:
+        except:
+            raise ModuleNotFoundError
+
+class CPosix:
+    def __init__(self):
+        UsingC.__init__(self)
+
+        try:
+            os.nice(-20)  # Sets this script as highest priority
+        except PermissionError:
+            print("Warning: Run with sudo to enable high-priority timing.")
+
+        # Compiles the C Script
+        print("Compiling the C code...")
+        lib_path = self.compile_c_lib(C_CODE_POSIX)
+
+    def compiler_check(self):
+        gcc_search_cmd = "which"
+        try:
+            check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+            if check.returncode != 0:  # Not Found
                 print("Please install MinGW-w64")
                 print("On ubuntu please run the command\n")
                 print(r"sudo apt install build-essentia")
                 print("\nOn fedora please run the command\n")
                 print(r"sudo dnf install gcc glibc-devel")
                 print("\nOnce installed and added, please re-run")
-    except:
-        raise ModuleNotFoundError
 
-def compile_c_lib(C_CODE:str):
+        except:
+            raise ModuleNotFoundError
+
+
+
+def python_spin_until(target_ns):
     """
-    Compiles the C code to keep the CPU busy and ready to execute
-    Args:
-        C_CODE: The C Code to be compiled - different whether Windows or Linux
-
-    Returns: so_file - The compiled C code
-
+    Python version of the POSIX spin_until C code.
+    Uses nanosecond resolution clocks available in the 'time' module.
     """
-    #If Windows, look for a .dll (dynamic link library) - else, look for a .so Shared Object file
-    suffix = ".dll" if os.name == "nt" else ".so"
-
-    #Creates the C file in the current working directory
-    c_file = os.path.join(os.getcwd(), "spin_core.c")
-
-    #Opens the c_file and writes the C_CODE to it
-    with open(c_file, mode="w") as f:
-        f.write(C_CODE)
-
-    #Replaces the .c with .so or .dll
-    so_file = c_file.replace(".c", suffix)
-
-    #gcc -O3 -shared -fPIC -o spin_core.dll spin_core.c
-    command = ["gcc", "-O3", "-shared", "-fPIC", "-o", so_file, c_file]
-
-    try:
-        #Attempts to compile, and records the output
-        subprocess.run(command, check=True, capture_output=True, text=True)
-        return so_file
-
-    #Catches the potential exception
-    except Exception as e:
-        print(f"Compilation Error: {e}")
-        return None
-
-def sync_and_trigger_stream(target_ns,
-                            so_file,
-                            pam_address:str,
-                            filename:str,
-                            connection_type:str = "QIS",
-                            stream_duration:float = STREAM_LENGTH):
-    """
-    This is a worker function. This is executed on different cores for different PAM devices
-    Args:
-        target_ns: The time the system aims to execute at
-        so_file: The compiled C code
-        pam_address: The address of the PAM to be connected to - in the format "TCP:1.1.1.1"
-        filename: The file to write to
-        connection_type: Default QIS, but can be overwritten to QPS
-        stream_duration: Stream length - how long to stream for
-
-    Returns None:
-    """
-
-    try:
-        #Connects 1st pam device to the same QIS Instance - timeout of 20s
-        pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type, timeout=str(20))
-
-        #Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
-        pam_power_device = quarchPPM(pam)
-
-    except Exception as e:
-        print(f"Could not connect to PAM: {e}")
-        sys.stdout.flush() #Forces output
-
-    try:
-        #Loads the compiled file
-        lib = ctypes.CDLL(so_file)
-
-        #Calls the spin_until function inside, keeps CPU busy and ready
-        lib.spin_until(ctypes.c_int64(target_ns))
-
-        #Starts stream
-        pam_power_device.start_stream(file_name=filename, stream_duration=stream_duration)
-
-    #Catches potential exception
-    except Exception as e:
-        print(f"Error triggering stream: {e}")
-        sys.stdout.flush() #Forces output
-
-def coordinate_multiproc_trigger(
-        so_file,
-        connection_type:str = "QIS",
-        filename_1:str = "RawDataPam1.csv",
-        filename_2:str = "RawDataPam2.csv",
-        stream_duration:float = STREAM_LENGTH):
-    """
-    The worker function to be called
-    Args:
-        so_file: The compiled C code
-        connection_type: Default QIS, but can be overwritten to QPS
-        filename_1: The file of the stream data for PAM 1
-        filename_2: The file of the stream data for PAM 2
-        stream_duration: Stream length
-
-    Returns None:
-
-    """
-    if os.name == "nt": #If windows correct for epoch differences
-        # Windows FileTime epoch is different from Unix Epoch
-        # Windows Epoch is 1601, Unix Epoch is 1970 - The difference is 11 644 473 600 seconds
-        # This is unix epoch (1970) since Windows epoch (1601), expressed in nanoseconds.
-        epoch_correction_ns = (11644473600 * 1000000000)
-
-        #Add a 5 seconds delay
-        target = time.time_ns() + int(5*1e9) + epoch_correction_ns
-
+    # 1. Determine the highest precision clock based on OS
+    # On Fedora/Linux, we must use CLOCK_MONOTONIC to avoid NTP jumps
+    if os.name == "POSIX":
+        clock_id = time.CLOCK_MONOTONIC
     else:
-        #CLOCK_MONOTONIC is the absolute elapsed time since system boot
-        target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5*1e9)
+        # On Windows, time_ns() uses GetSystemTimePreciseAsFileTime internally
+        clock_id = None
 
-    #Creates Process objects
-    process1 = multiprocessing.Process(target=sync_and_trigger_stream, args=(target, so_file, PAM_1_ADDRESS, filename_1, connection_type, stream_duration))
-    process2 = multiprocessing.Process(target=sync_and_trigger_stream, args=(target, so_file, PAM_2_ADDRESS, filename_2, connection_type, stream_duration))
+        # 2. Spin Loop (Mimics the C while(1) logic)
+    while True:
+        # Obtain current time in nanoseconds
+        if clock_id is not None:
+            # Direct POSIX equivalent
+            now_ns = time.clock_gettime_ns(clock_id)
+        else:
+            # Windows equivalent
+            now_ns = time.time_ns()
 
-    #Starts the processes activity
-    process1.start()
-    process2.start()
+        # 3. If current time is >= target time, break
+        if now_ns >= target_ns:
+            break
 
-    #Shows progress bar for stream length with an extra 5 seconds
-    visual_sleep((STREAM_LENGTH+5), title="Stream in progress")
+def use_c_compiler():
+    """
+    Asks the user if they want to use a C compiler (Quicker) or just standard python
 
-    #Blocks the main script until both processes are done
-    process1.join()
-    process2.join()
+    Returns True: if C compiler is selected, and calls the function to check
+    Returns False: if selected no
+    """
+    print("Do you want to use a C compiler or standard python?")
+    print("Select Yes to use a C compiler, No to use standard python")
+
+    answer = showYesNoDialog(title="Use a C compiler?", message="Yes for C Compiler, No for Standard Python")
+
+    if answer == "Yes":
+        return True
+    else:
+        return False
+
+
 
 def ping_device(ip_address:str):
     """
@@ -396,7 +500,6 @@ def csv_combiner(csv_file_1:str = FILE_NAME_PAM_1, csv_file_2:str = FILE_NAME_PA
 
     Returns None:
     """
-
     #Uses pandas, and creates a dataframe of each csv
     csv1 = pd.read_csv(csv_file_1)
     csv2 = pd.read_csv(csv_file_2)
@@ -426,14 +529,12 @@ def open_qps_to_view_csv():
     Used for user to view the CSVs as QPS Traces - currently semi-automated process
 
     Returns: None
-    #TODO - Fully automate with next QPS release
-
     """
     #Starts Local QPS instance
     startLocalQps()
 
     #Connects to localhost QPS Instance
-    qpsInterface()
+    my_qps = qpsInterface()
 
     #Connect PAM1 (again), explicitly QPS
     pam_2_device = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType="QPS")
@@ -443,6 +544,10 @@ def open_qps_to_view_csv():
 
     #Opens connection to PAM - Required to convert a CSV to QPS
     my_qps_pam.open_connection()
+
+    command = f'$convert csv from="{FILE_NAME_COMBINED}" to="{QPS_RECORDING}"'
+
+    my_qps.sendCommand(command)
 
 
 if __name__ == "__main__":
