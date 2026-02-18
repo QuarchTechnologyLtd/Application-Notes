@@ -90,19 +90,16 @@ os.makedirs(data_path, exist_ok=True)
 #Stored within the local folder
 stream_path = os.path.join(data_path, "QPS Trace")
 
-#Log file path is used for logging
-#Explicitly stated to be in same path as the python script
-#File name is logFile_YYYY-MM-DD-HH-mm-SS.txt, in localtime
-log_file_path = os.path.join(data_path, "logFile_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()) + " .txt")
-
 #Leaves only numeric characters, strips all non-numeric characters
 REGEX_PATTERN = r"\D+"
 
 def main():
-    #Starts logging - Has both QIS logs, and script logs
-    logging.basicConfig(filename=log_file_path, level=logging.DEBUG,
-                        format="[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s",
-                        datefmt="%H:%M:%S")
+    # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+    # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+    # logging.basicConfig(level=logging.DEBUG)
+    # # To control specifically the quarchpy console log level use the following line:
+    # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
     print("Quarch application note example: AN-014 Power Sequencing")
     print("---------------------------------------\n\n")
@@ -110,17 +107,12 @@ def main():
     #Gives instructions to user in the terminal
     print("\n*************************************")
     print("*************************************\n")
-    print("When the stream is running, power up or power down the host system")
-    print("The stream will run for 60 seconds - you can adjust this value")
+    print("When the stream is running, power up or power down the host system. The stream will run for 60 seconds - you can adjust this value in the script")
     print("\n*************************************")
     print("*************************************\n")
 
-    #Allows time to read the brief instruction
-    time.sleep(8)
-
     # Scan for quarch devices over all connection types (USB, Serial and LAN)
     print("Connect to Breaker. Scanning for Devices...\n")
-    log_write("Connecting to breaker")
     device_list = scanDevices('all', favouriteOnly=True)
 
     #Takes the users input from command line
@@ -128,16 +120,11 @@ def main():
 
     #If user has to quit, quit and close nicely
     if module_str == "quit":
-        log_write("User selected quit")
         return 0
 
     # Create a device using the module connection string returned from the selection
     print("\n\nConnecting to the selected device")
     breaker_device = get_quarch_device(module_str)
-
-    #Logging the breaker identity
-    log_write("Connected to breaker: Breaker identity")
-    log_write(breaker_device.send_command("*idn?"))
 
     # Print the device name after the selection to confirm connection
     print("Module Name:")
@@ -145,11 +132,9 @@ def main():
 
     # Sets the module to its default state
     breaker_device.send_command("CONFig:DEFault STATE")
-    log_write("Breaker set to default state")
 
     #Breaker is powered down -
     breaker_device.send_command("RUN:POWer DOWN")
-    log_write("Breaker powered down")
 
     #Configure what power rail the breaker is triggered off
     user_select_trigger(breaker_device)
@@ -158,77 +143,63 @@ def main():
     print("Please enter the delays in ms for the power up sequence")
 
     delay1_up, delay2_up, delay3_up = user_select_delays()
-    log_write("Power up delays selected: "+ delay1_up +"ms " + delay2_up +"ms " + delay3_up+"ms")
 
     #Opening QPS
     print("-Starting QPS")
 
     # Checks if QPS is already running, and starts it if it isn't
     if not isQpsRunning():
-        log_write("Starting QPS")
         # Start the version on QPS installed with the quarchpy, otherwise use the running version
         startLocalQps(keepQisRunning=True)
 
     # Open an interface to local QPS - used for communicating with it
     my_qps = qpsInterface()
-    log_write("QPS Interface opened")
 
     print("\n-Requesting PAM selection")
     #Asks user to select the PAM to be used
     my_device_id = GetQpsModuleSelection(my_qps)
-    log_write("Requesting PAM selection")
 
     # Create a Quarch device connected via QPS
     my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
-    log_write("PAM connected")
 
     # Upgrade Quarch device to QPS device
     pam_device = quarchQPS(my_quarch_device)
-    log_write("Quarch device upgraded to QPS device")
 
     #Opens connection to the PAM
     pam_device.open_connection()
-    log_write("PAM connection opened")
 
     # Powers the pam up
     pam_device.send_command("RUN:POWer up")
-
-    #Logs the PAM identity
-    log_write("Connected to PAM. PAM identity:")
-    log_write(pam_device.send_command("*idn?"))
 
     # Creates the stream folder, named YY-MM-DD_HH_MM_SS
     file_name = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
 
     #Configures breaker with user selected delay
     breaker_configure_delays(breaker_device, delay1_up, delay2_up, delay3_up)
-    log_write("Breaker power up configured")
 
 
     #STREAM START
-
     #Started the stream
+    print("Starting Stream, open QPS")
     my_stream = pam_device.start_stream(stream_path + "\\" + file_name)
-    log_write("Stream started")
 
-    #Streams for 60 seconds - enough for a power up and power down on some systems - increase this if needed
-    time.sleep(60)
+    #Streams for 60 seconds - enough for a power up or power down on most systems - increase this if needed
+    visual_sleep(60)
 
     #Stops streaming
     my_stream.stop_stream()
-    log_write("Stream completed")
-
+    print("Stream completed")
     #STREAM END
 
 
     #Close connection to the breaker and PAM - streaming finished
+    print("Closing connections")
     breaker_device.close_connection()
-    log_write("Breaker connection closed")
+
     pam_device.close_connection()
-    log_write("PAM connection closed")
 
     #Test finished
-    print("Test completed")
+    print("\nTest completed")
 
     print("\n\nThe PCI Express Card Electromechanical Specification, Revision 6, Section 4.4 states")
     print("\nThere is no specific requirement for power supply sequencing of the power supply rails, whether")
@@ -239,8 +210,6 @@ def main():
     print("Change the delays, and the order of the delays")
     print("Verify that the device comes online as expected")
 
-    log_write("Test completed")
-    log_write("Exiting script")
     sys.exit()
 
 
@@ -303,18 +272,18 @@ def breaker_configure_delays(my_breaker, delay1, delay2, delay3):
     :return None:
     """
 
-    #smy_breaker.open_connection()
     #Delays are in milliseconds
     my_breaker.send_command("SOURce:1 DELAY " + delay1)
     my_breaker.send_command("SOURce:2 DELAY " + delay2)
     my_breaker.send_command("SOURce:3 DELAY " + delay3)
-    log_write("Source delays have been set")
+
+    #Moves all signals to source 7 - Immediate change
+    my_breaker.send_command("SIGnal:ALL:SOURce 7")
 
     # Assigns source 1 delay to 12V power, source 2 delay to 3V3 power, source 3 delay to 3V3 aux
     my_breaker.send_command("SIGnal:12V_POWER:SOURce 1")
     my_breaker.send_command("SIGnal:3V3_POWER:SOURce 2")
     my_breaker.send_command("SIGnal:3V3_AUX:SOURce 3")
-    log_write("Signals have been assigned delays")
 
 def user_select_trigger(my_breaker):
     """
@@ -341,22 +310,9 @@ def user_select_trigger(my_breaker):
     #Sets the trigger to the rail the user selected
     my_breaker.send_command("TRIGger:IN:SOURce " + power_rail_trig)
 
-    #Logs and prints the rail selected
-    log_write("Power rail triggered from is " + power_rail_trig)
+    #Prints the rail selected
     print("Power rail triggered from is " + power_rail_trig + "\n")
 
-
-def log_write(log_string):
-    """"
-    Appends log_string to log file - useful for debugging
-
-    :param log_string: The string to log
-
-    :return: None
-    """
-    #Writes the string log_string to log file and prints new line
-    with open(log_file_path, "a") as log_file:
-        log_file.write(log_string + "\n")
 
 # Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":
