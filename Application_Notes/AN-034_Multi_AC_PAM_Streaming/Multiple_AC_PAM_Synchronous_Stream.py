@@ -41,6 +41,7 @@ This AN-034 uses the quarchpy python package and demonstrates
 4 - Run the script with admin permissions
 """
 
+
 #To add package
 import psutil #OS Priority Setting
 import numpy as np
@@ -58,6 +59,7 @@ from quarchpy.connection_specific import *
 
 #Included in default installation
 import time
+from datetime import datetime
 import os
 import shutil #Check GCC
 import multiprocessing #Multicore processing
@@ -68,23 +70,27 @@ from abc import ABC, abstractmethod
 
 #USER TO CHANGE - Constants, Should be static while program is running
 # Hardcoded PAM Addresses
-PAM_1_ADDRESS = "TCP:10.0.8.110"
-PAM_2_ADDRESS = "TCP:10.0.8.95"
+PAM_1_ADDRESS = "TCP:10.0.9.226"
+PAM_2_ADDRESS = "USB:QTL2312-01-035"
 
 #Stream length in seconds - QIS call takes float parameter
 STREAM_LENGTH = float(20)
+
+#The rate at which to resample the stream - DC PAMs minimum is 4us, AC PAMs is 250us
+STREAM_RESAMPLE_RATE = "1ms"
+
+#Optional Hardcode - Change if you want to speed up time in between runs
+HARDCODED_HARDWARE_TRIGGER=None #Valid answers are "Yes" or "No"
+HARDCODED_CONNECTION_TYPE=None #Valid answers are "QIS" or "QPS"
+HARDCODED_SPIN_LANGUAGE = None #Valid answers are "C" or "Python"
 #/USER TO CHANGE/
 
 #All in Current Working Directory
 #Filename of the CSV output from PAM1
 FILE_NAME_PAM_1 = "RawDataPam1.csv"
-#Absolute path of the CSV OUTPUT from PAM1
-PATH_PAM_1 = os.path.join(os.getcwd(),FILE_NAME_PAM_1)
 
 #Filename of the CSV output from PAM2
 FILE_NAME_PAM_2 = "RawDataPam2.csv"
-#Absolute path of the CSV output from PAM2
-PATH_PAM_2 = os.path.join(os.getcwd(),FILE_NAME_PAM_2)
 
 #The name of the file after the 2 pam streams have been combined
 FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
@@ -95,105 +101,148 @@ if PAM_1_ADDRESS.split(":")[0] == "TCP":
 if PAM_2_ADDRESS.split(":")[0] == "TCP":
     ip_address_2 = PAM_2_ADDRESS.split(":")[1]
 
-
 def main():
+    # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+    # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+    #logging.basicConfig(level=logging.DEBUG)
+    # # To control specifically the quarchpy console log level use the following line:
+    # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
+
     print("*****************************************")
-    print("*****************************************")
+    print("*****************************************\n")
     print("AN-034 - Multiple PAM Synchronous Stream")
     print("Connect the devices over IP on the same network")
-    print("*****************************************")
+    print("\n*****************************************")
     print("*****************************************")
 
     #Requires features added in 2.2.17
     requiredQuarchpyVersion("2.2.17")
 
-    #Currently QIS only. Next Quarchpy release will enable dual QPS streams
-    #print("Do you want to use QPS?")
-    #qis_or_qps = showYesNoDialog("QPS or QIS", "Yes for QPS, no for QIS")
-    #if qis_or_qps == "Yes":
-        #connection_type = "QPS"
-        ##TODO
-    #else:
-    connection_type = "QIS"
+    #e.g. Standard DC PAMs (QTL2312)
+    #Checks if optional hardcode is set
+    if HARDCODED_CONNECTION_TYPE is not None:
+        #if it is, assign local variable to global constant
+        hardware_trigger = HARDCODED_HARDWARE_TRIGGER
+    else: #Not hardcoded, so takes user input
+        print("Are you using PAMs connected by a triggering cable?")
+        hardware_trigger = showYesNoDialog(title="Triggering cable?", message="Yes for triggering cable, no for software trigger")
 
-        # If QIS is not already running
-    if not isQisRunning():
-            # Start Local QIS Instance
-        print("Starting QIS...")
-        startLocalQis()
-
-        # Connects to the localhost QIS instance
-    QisInterface()
-
-    #E.G. Standard DC PAMs (QTL2312)
-    print("Are you using PAMs connected by a triggering cable?")
-    hardware_trigger = showYesNoDialog(title="Triggering cable?", message="Yes for triggering cable, no for software trigger")
     if hardware_trigger == "Yes": #Using triggering cable
 
-        # Connects 1st pam device to the same QIS Instance - timeout of 20s timeout=str(20)
-        pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type)
-        pam_1_name = "QTL"+ pam1.sendCommand("*enclosure?")
-        pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type)
-        pam_2_name = "QTL"+ pam2.sendCommand("*enclosure?")
+        #Checks if optional hardcode is set
+        if HARDCODED_CONNECTION_TYPE is not None:
+            # if it is, assign local variable to global constant
+            connection_type = HARDCODED_CONNECTION_TYPE
+        else:#Not hardcoded, so takes user input
+            optionList = "QIS,QPS"
+            connection_type = user_interface.listSelection(title="QIS or QPS", message="Select QIS or QPS",selectionList=optionList, nice=True)
+
+        #If using QIS, call the setup function - response is different based on QIS or QPS
+        if connection_type == "QIS":
+            pam1, pam2, qis = launch_and_run(connection_type)
+
+        else: #QPS
+            pam1, pam2, qps1, qps2 = launch_and_run(connection_type)
+
+        #Gets the serial number in the format XXXX-XX-XXX
+        pam_1_name = "QTL" + pam1.sendCommand("*enclosure?")
+        pam_2_name = "QTL" + pam2.sendCommand("*enclosure?")
 
         # Upgrades PAM to quarchPPM class
         pam_1_power_device = quarchPPM(pam1)
         pam_2_power_device = quarchPPM(pam2)
 
-        #PAM 1 trigger out to PAM 2 trigger in
+        #Resamples the PAMs so they are sampling at the same rate
+        pam_1_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
+        pam_2_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
+
+        #Gives instructions of how to connect the PAM triggers
         print(f"Connect PAM 1 {pam_1_name} trigger out, to PAM 2 {pam_2_name} trigger in\n")
         showDialog(title="Select yes, when setup", message=f"Is it setup in this way?")
 
         print("\nConfiguring Trigger...\n")
 
+        #Configure recording trigger on PAM2
+        pam_2_power_device.send_command("RECord:RUN")
+        pam_2_power_device.send_command("RECord:TRIGger:MODE EXTernal")
+
+        #Gives time for it to be setup
+        time.sleep(1)
+
         #Configure trigger out on pam 1
         pam_1_power_device.send_command("TRIGger:OUT:MODE RECORD")
 
-        #Configure recording trigger on PAM2
-        pam_2_power_device.send_command("RECord:STREAM")
-        pam_2_power_device.send_command("RECord:TRIGger:MODE EXTernal")
+        #Setups stream on PAM2, with the target CSV - waits on trigger
+        pam_2_power_device.start_stream("RawDataPam2.csv")
 
-        #Allows time for commands to register
-        time.sleep(5)
+        # Gives time for it to be setup
+        time.sleep(1)
 
         print("Streaming...")
 
+        #Starts stream on both devices
         pam_1_power_device.start_stream("RawDataPam1.csv", stream_duration=STREAM_LENGTH)
-        #When Pam1 has stopped streaming, stop Pam2
+
+        #Waits stream_length
         time.sleep(STREAM_LENGTH)
+
+        #Stop PAM2 after Stream Length - trigger only syncs the start
         pam_2_power_device.send_command("RECord:STOP")
 
+        time.sleep(2)
+        #Closes the connection 2 seconds after stream ended
+        pam_2_power_device.close_connection()
 
     else: #Using software trigger (e.g. AC PAMs - both 3 phase and IEC PAMs)
-        print("Do you want to use a C compiler, or standard python?")
-        answer = showYesNoDialog(title="Do you want to use a C compiler?", message="Yes for C Compiler, No for Standard Python")
+        # Checks if optional hardcode is set
+        if HARDCODED_CONNECTION_TYPE is not None:
+            # if it is, assign local variable to global constant
+            connection_type = HARDCODED_CONNECTION_TYPE
+        else:#Not hardcoded, so takes user input
+            optionList = "QIS,QPS"
+            connection_type = user_interface.listSelection(title="QIS or QPS", message="Select QIS or QPS",selectionList=optionList, nice=True)
 
-        if answer == "Yes":
-            if os.name == "nt": #Windows
+        if HARDCODED_SPIN_LANGUAGE is not None:
+            # Checks if optional hardcode is set
+            spin_language = HARDCODED_SPIN_LANGUAGE
+        else:# if it is, assign local variable to global constant
+            optionList = "C,Python"
+            spin_language = user_interface.listSelection(title="Do you want to use a C backend?", message="Select C or Python", selectionList=optionList, nice=True)
+
+        #Similar to switch case in other languages - reduces indents and easier to read
+        match (connection_type, os.name, spin_language):
+            case ("QIS", "nt", "C"): #QIS, Windows, C
                 syncStreamObj = CWindows()
-                syncStreamObj.compiler_check()
+                syncStreamObj.compiler_check() #Checks compiler is present
 
-            elif os.name == "posix": #POSIX
+            case ("QIS", "posix", "C"): #QIS, POSIX, C
+                syncStreamObj = CPosix()
+                syncStreamObj.compiler_check() #Checks compiler is present
+
+            case ("QIS", "nt", "Python"): #QIS, Windows, Python
+                syncStreamObj = PyWindows()
+
+            case ("QIS", "posix", "Python"): #QIS, POSIX, Python
+                syncStreamObj = PyPosix()
+
+            case ("QPS", "nt", "C"): #QPS, Windows, C
+                syncStreamObj = CWindows()
+                syncStreamObj.compiler_check()#Checks compiler is present
+
+            case ("QPS", "posix", "C"): #QPS, POSIX, C
                 syncStreamObj = CPosix()
                 syncStreamObj.compiler_check()
 
-            else: #If not Windows or Linux, raise an error
-                print("OS not currently supported. Please use a Windows or POSIX system")
-                raise OSError("Unsupported operating system")
-
-        else: #Python only
-            if os.name == "nt":  # Windows
+            case ("QPS", "nt", "Python"): #QPS, Windows, Python
                 syncStreamObj = PyWindows()
 
-            elif os.name == "posix":  # POSIX
+            case ("QPS", "posix", "Python"):
                 syncStreamObj = PyPosix()
 
-            else:  # If not Windows or Linux, raise an error
+            case _: #Catchall - OS is the only one that isn't binary - i.e. qis or qps, c or python
                 print("OS not currently supported. Please use a Windows or POSIX system")
                 raise OSError("Unsupported operating system")
-
-        ping_device(PAM_1_ADDRESS)
-        ping_device(PAM_2_ADDRESS)
 
         syncStreamObj.stream(connection_type)
 
@@ -207,15 +256,25 @@ def main():
     print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
 
     #Opens QPS, ready for user to manually import CSV
-    open_qps_to_view_csv()
+    if connection_type == "QPS":
+        #Passes in the already open instance of QPS used for PAM 1
+        view_csv_in_qps(qps1)
+        #Close the 2nd QPS instance
+        closeQps(port=9823)
+
+    else: #If QIS was used, open a QPS instance
+        qps_instance = start_qps_and_connect()
+        #Opens the CSV
+        view_csv_in_qps(qps_instance)
 
     print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_")
+    print("If running again, rename the QPS recording, and CSV")
 
     sys.exit(0)
 
 class UsingC(ABC):
     def __init__(self):
-        pass
+        self.so_file = None
 
     @abstractmethod
     def compiler_check(self):
@@ -223,12 +282,13 @@ class UsingC(ABC):
 
     def stream(self, connection_type):
         # Pings the IP Addresses before starting the stream - Comment out if using USB
-        ping_device(ip_address_1)
-        ping_device(ip_address_2)
+        #ping_device(ip_address_1)
+        #ping_device(ip_address_2)
 
-        print("Compiled successfully, starting stream in 5 seconds...")
+        startLocalQis()
+        print("Spinning up CPU...")
 
-        self.coordinate_multiproc_trigger(connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
+        self.coordinate_multiproc_trigger(connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH, self.so_file)
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
@@ -246,12 +306,16 @@ class UsingC(ABC):
         # Creates the C file in the current working directory
         c_file = os.path.join(os.getcwd(), "spin_core.c")
 
+        # Replaces the .c with .so or .dll
+        so_file = c_file.replace(".c", suffix)
+
+        #If compiled file is already present, don't recompile
+        if os.path.exists(so_file):
+            return so_file
+
         # Opens the c_file and writes the C_CODE to it
         with open(c_file, mode="w") as f:
             f.write(C_CODE)
-
-        # Replaces the .c with .so or .dll
-        so_file = c_file.replace(".c", suffix)
 
         # gcc -O3 -shared -fPIC -o spin_core.dll spin_core.c
         command = ["gcc", "-O3", "-shared", "-fPIC", "-o", so_file, c_file]
@@ -270,7 +334,7 @@ class UsingC(ABC):
     def sync_and_trigger_stream(target_ns,
                                 pam_address: str,
                                 filename: str,
-                                so_file: str = "spin_core.so",
+                                so_file: str = "spin_core.dll",
                                 connection_type: str = "QIS",
                                 stream_duration: float = STREAM_LENGTH):
         """
@@ -292,6 +356,8 @@ class UsingC(ABC):
 
             # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
             pam_power_device = quarchPPM(pam)
+
+            pam_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
 
         except Exception as e:
             print(f"Could not connect to PAM: {e}")
@@ -318,7 +384,7 @@ class UsingC(ABC):
             filename_1: str = "RawDataPam1.csv",
             filename_2: str = "RawDataPam2.csv",
             stream_duration: float = STREAM_LENGTH,
-            so_file: str = "spin_core.so"):
+            so_file: str = "spin_core.dll"):
         """
         The worker function to be called
         Args:
@@ -350,17 +416,28 @@ class UsingC(ABC):
         process2 = multiprocessing.Process(target=self.sync_and_trigger_stream,
                                            args=(target, PAM_2_ADDRESS, filename_2, so_file, connection_type,
                                                  stream_duration))
+        try:
+            # Starts the processes activity
+            process1.start()
+            process2.start()
 
-        # Starts the processes activity
-        process1.start()
-        process2.start()
+            # Shows progress bar for stream length with an extra 5 seconds
+            visual_sleep((STREAM_LENGTH + 5), title="Stream in progress")
 
-        # Shows progress bar for stream length with an extra 5 seconds
-        visual_sleep((STREAM_LENGTH + 5), title="Stream in progress")
+            # Blocks the main script until both processes are done
+            process1.join()
+            process2.join()
 
-        # Blocks the main script until both processes are done
-        process1.join()
-        process2.join()
+        except KeyboardInterrupt:
+            if process1.is_alive():
+                process1.terminate()
+            if process2.is_alive():
+                process2.terminate()
+
+            process1.join()
+            process2.join()
+
+            sys.exit(0)
 
 class CWindows(UsingC):
     def __init__(self):
@@ -394,8 +471,9 @@ class CWindows(UsingC):
         p.nice(psutil.HIGH_PRIORITY_CLASS)
 
         #Compiles the C Script
-        print("Compiling the C code...")
-        self.compile_c_lib(C_CODE)
+        self.so_file = self.compile_c_lib(C_CODE)
+
+
 
     def compiler_check(self):
         gcc_search_cmd = "where"
@@ -449,8 +527,7 @@ class CPosix(UsingC):
             print("Warning: Run with sudo to enable high-priority timing.")
 
         # Compiles the C Script
-        print("Compiling the C code...")
-        self.compile_c_lib(C_CODE)
+        self.so_file = self.compile_c_lib(C_CODE)
 
     def compiler_check(self):
         gcc_search_cmd = "which"
@@ -479,9 +556,11 @@ class UsingPython(ABC):
     def stream(self, connection_type):
         # Pings the IP Addresses before starting the stream - Comment out if using USB
         ping_device(ip_address_1)
-        ping_device(ip_address_2)
+        #ping_device(ip_address_2)
 
-        print("Starting stream in 5 seconds...")
+        startLocalQis()
+
+        print("Spinning up CPU...")
         self.coordinate_multiproc_trigger(connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
 
 
@@ -506,17 +585,28 @@ class UsingPython(ABC):
         process2 = multiprocessing.Process(target=self.sync_and_trigger_stream,
                                            args=(target, PAM_2_ADDRESS, filename_2, connection_type,
                                                  stream_duration))
+        try:
+            # 3. Start the processes
+            process1.start()
+            process2.start()
 
-        # 3. Start the processes
-        process1.start()
-        process2.start()
+            # 4. Show progress bar for stream length with an extra 5 seconds
+            visual_sleep((STREAM_LENGTH + 5), title="Stream in progress")
 
-        # 4. Show progress bar for stream length with an extra 5 seconds
-        visual_sleep((STREAM_LENGTH + 5), title="Stream in progress")
+            # 5. Block the main script until both processes are done
+            process1.join()
+            process2.join()
 
-        # 5. Block the main script until both processes are done
-        process1.join()
-        process2.join()
+        except KeyboardInterrupt:
+            if process1.is_alive():
+                process1.terminate()
+            if process2.is_alive():
+                process2.terminate()
+
+            process1.join()
+            process2.join()
+
+            sys.exit(0)
 
     def sync_and_trigger_stream(self,
                                 target_ns,
@@ -542,6 +632,8 @@ class UsingPython(ABC):
 
             # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
             pam_power_device = quarchPPM(pam)
+
+            pam_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
 
         except Exception as e:
             print(f"Could not connect to PAM: {e}")
@@ -584,6 +676,42 @@ class PyPosix(UsingPython):
 
             if now_ns >= target_ns:
                 break
+
+def launch_and_run(connection_type):
+
+    if connection_type == "QPS":
+        # QPS instance 1 is easy - use default ports
+        qps1 = startLocalQps(startQPSMinimised=False)
+
+        # Connects 1st pam device to the same QIS Instance - timeout of 20s timeout=str(20)
+        pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type, qps_instance=qps1)
+
+        #Create separate QIS backend
+        startLocalQis(port=9723,rest_port=9781)
+        #Creates separate QPS launch, connected to second QIS instance
+        qps2 = startLocalQps(startQPSMinimised=False,port=9823, qis_port=9723, qis_rest_port=9781)
+
+        #Connects the 2nd PAM to the 2nd QIS
+        pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type, qps_instance=qps2)
+
+        #Returns the pams, and qps objects
+        return pam1, pam2, qps1, qps2
+
+    else:  # QIS
+
+        # If QIS is not already running
+        if isQisRunning():
+            qis = QisInterface()
+        else:
+            # Start Local QIS Instance
+            print("Starting QIS...")
+            qis = startLocalQis()
+
+        # Connects 1st pam device to the same QIS Instance - timeout of 20s timeout=str(20)
+        pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type)
+
+        pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type)
+        return pam1, pam2, qis
 
 def ping_device(ip_address:str):
     """
@@ -636,43 +764,46 @@ def csv_combiner(csv_file_1:str = FILE_NAME_PAM_1, csv_file_2:str = FILE_NAME_PA
     #Prints the filename
     print("CSVs have been combined - filename = " + FILE_NAME_COMBINED)
 
-
-def open_qps_to_view_csv():
+def view_csv_in_qps(qps_instance: QpsInterface):
     """
     Opens QPS and reconnects to PAM 1
-    Used for user to view the CSVs as QPS Traces - currently semi-automated process
+    Used for user to view the CSVs as QPS Traces
 
     Returns: None
     """
-    #Starts Local QPS instance
-    startLocalQps()
 
-    #Connects to localhost QPS Instance
-    my_qps = qpsInterface()
+    current_time = datetime.now()
+    formatted_time = current_time.strftime("_%H_%M_%S")
 
-    #Connect PAM1 (again), explicitly QPS
-    pam_2_device = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType="QPS")
-
-    #Upgrade PAM1 to a QPS device
-    my_qps_pam = quarchQPS(pam_2_device)
-
-    #Opens connection to PAM - Required to convert a CSV to QPS
-    my_qps_pam.open_connection()
-
-    recording_dir = os.getcwd() + r"\Recording\sync_stream.qps"
+    file_path = os.getcwd() + rf"\sync_stream\sync_stream.qps"
 
     print("Converting CSV file to QPS")
 
-    command = f'$convert csv from="{FILE_NAME_COMBINED}" to="{recording_dir}"'
-    response = my_qps.sendCommand(command)
+    command = f'$convert csv from="{FILE_NAME_COMBINED}" to="{file_path}"'
+    response = qps_instance.sendCommand(command)
     print(response)
 
-    print(f"Opening QPS Recording. Stored: {recording_dir}")
+    print(f"Opening QPS Recording. Stored: {file_path}")
 
-    command = f'$open recording qpsFile="{recording_dir}"'
-    response = my_qps.sendCommand(command)
+    command = f'$open recording qpsFile="{file_path}"'
+    response = qps_instance.sendCommand(command)
     print(response)
+
+def start_qps_and_connect():
+    startLocalQps()
+
+    # Connects to localhost QPS Instance
+    qps_instance = qpsInterface()
+
+    # Connect PAM1 (again), explicitly QPS
+    pam_1_device = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType="QPS")
+
+    # Upgrade PAM1 to a QPS device
+    my_qps_pam = quarchQPS(pam_1_device)
+
+    # Opens connection to PAM - Required to convert a CSV to QPS
+    my_qps_pam.open_connection()
+    return qps_instance
 
 if __name__ == "__main__":
     main()
-
