@@ -47,6 +47,7 @@ import psutil #OS Priority Setting
 import numpy as np
 import pandas as pd #CSV manipulation
 
+import SyncUtils
 #To add package
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
@@ -250,7 +251,7 @@ def main():
     print("Combining CSV files...")
 
     #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
-    csv_combiner()
+    combined_csv = SyncUtils.csv_combiner(FILE_NAME_PAM_1, FILE_NAME_PAM_2)
 
     #PLACEHOLDER
     print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
@@ -258,14 +259,14 @@ def main():
     #Opens QPS, ready for user to manually import CSV
     if connection_type == "QPS":
         #Passes in the already open instance of QPS used for PAM 1
-        view_csv_in_qps(qps1)
+        view_csv_in_qps(qps1, combined_csv)
         #Close the 2nd QPS instance
         closeQps(port=9823)
 
     else: #If QIS was used, open a QPS instance
         qps_instance = start_qps_and_connect()
         #Opens the CSV
-        view_csv_in_qps(qps_instance)
+        view_csv_in_qps(qps_instance, combined_csv)
 
     print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_")
     print("If running again, rename the QPS recording, and CSV")
@@ -555,7 +556,7 @@ class UsingPython(ABC):
 
     def stream(self, connection_type):
         # Pings the IP Addresses before starting the stream - Comment out if using USB
-        ping_device(ip_address_1)
+        SyncUtils.ping_device(ip_address_1)
         #ping_device(ip_address_2)
 
         startLocalQis()
@@ -713,81 +714,11 @@ def launch_and_run(connection_type):
         pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type)
         return pam1, pam2, qis
 
-def ping_device(ip_address:str):
-    """
-    Pings the specified IP address, to ensure the device is awake and ready to connect
-    Args:
-        ip_address: The IP address to ping
 
-    Returns None:
-    """
-    #Command is in the form
-    #ping -n 1 1.1.1.1 on windows
-    #ping -c 1 1.1.1.1 on all other os's
-    try:
-        param = "-n" if os.name == "nt" else "-c"
-        command = ["ping", param, "1", ip_address]
-        #Execute the command, capture the output
-        subprocess.run(command, capture_output=True, text=True)
 
-    except Exception as e:
-        print(f"IP Ping error: {e}")
 
-def csv_combiner(csv_file_1:str = FILE_NAME_PAM_1, csv_file_2:str = FILE_NAME_PAM_2):
-    """
-    Merges the PAM Stream CSVs, keeps shared time column, renames and adds 1_ and 2_ to the column headers
-    Args:
-        csv_file_1: CSV file 1
-        csv_file_2: CSV file 2
 
-    Returns None:
-    """
-    #Uses pandas, and creates a dataframe of each csv
-    csv1 = pd.read_csv(csv_file_1)
-    csv2 = pd.read_csv(csv_file_2)
 
-    #Column name of the time column - This will be the same in both CSVs, and should not be changed
-    #Time uS may change according to sample time
-    shared_time_column = "Time uS"
-
-    #Adds the 1_ or 2_ prefix to each individual data frame, except the time column
-    csv1_prefix = csv1.add_prefix("1_").rename(columns={"1_" + shared_time_column: shared_time_column})
-    csv2_prefix = csv2.add_prefix("2_").rename(columns={"2_" + shared_time_column: shared_time_column})
-
-    #Merge the two data frames - format being
-    #time, 1_B,1_C,..., 1_XXX, 2_B,2_C,...,2_XXX
-    merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
-
-    #Changes the dataframe to CSV
-    merged_data.to_csv(FILE_NAME_COMBINED, index=False)
-
-    #Prints the filename
-    print("CSVs have been combined - filename = " + FILE_NAME_COMBINED)
-
-def view_csv_in_qps(qps_instance: QpsInterface):
-    """
-    Opens QPS and reconnects to PAM 1
-    Used for user to view the CSVs as QPS Traces
-
-    Returns: None
-    """
-
-    current_time = datetime.now()
-    formatted_time = current_time.strftime("_%H_%M_%S")
-
-    file_path = os.getcwd() + rf"\sync_stream\sync_stream.qps"
-
-    print("Converting CSV file to QPS")
-
-    command = f'$convert csv from="{FILE_NAME_COMBINED}" to="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
-
-    print(f"Opening QPS Recording. Stored: {file_path}")
-
-    command = f'$open recording qpsFile="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
 
 def start_qps_and_connect():
     startLocalQps()
