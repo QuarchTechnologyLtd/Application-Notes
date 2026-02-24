@@ -44,7 +44,7 @@ from quarchpy.device import quarchPPM, get_quarch_device
 from quarchpy.qis import *
 from quarchpy.qps import startLocalQps
 from quarchpy.user_interface import showYesNoDialog, showDialog, visual_sleep
-import SyncUtils
+import syncUtils
 
 #Length of stream in seconds
 STREAM_LENGTH = 60

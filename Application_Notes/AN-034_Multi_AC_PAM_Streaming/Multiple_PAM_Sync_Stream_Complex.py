@@ -30,7 +30,6 @@ This AN-034 uses the quarchpy python package and demonstrates
 2 - Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
 3 - GCC (GNU Compiler Collection) - See README.md
-4 - Python packages - psutil, numpy, pandas
 5- A multicore processor (2 minimum)
 
 ########### INSTRUCTIONS ##############
@@ -40,17 +39,10 @@ This AN-034 uses the quarchpy python package and demonstrates
 3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS, STREAM_LENGTH
 4 - Run the script with admin permissions
 """
-
-
-#To add package
-import psutil #OS Priority Setting
-import numpy as np
-import pandas as pd #CSV manipulation
-
-import SyncUtils
+#Local files
+import syncUtils
 import syncComplexClasses
 
-#To add package
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
 from quarchpy.debug.versionCompare import requiredQuarchpyVersion
@@ -62,18 +54,11 @@ from quarchpy.connection_specific import *
 
 #Included in default installation
 import time
-from datetime import datetime
 import os
-import shutil #Check GCC
-import multiprocessing #Multicore processing
-import ctypes #Allows calling functions into the compiled C code
-import subprocess #Shell commands
-from abc import ABC, abstractmethod
-
 
 #USER TO CHANGE - Constants, Should be static while program is running
 # Hardcoded PAM Addresses
-PAM_1_ADDRESS = "TCP:10.0.9.226"
+PAM_1_ADDRESS = "USB:QTL2312-01-477"
 PAM_2_ADDRESS = "USB:QTL2312-01-035"
 
 #Stream length in seconds - QIS call takes float parameter
@@ -82,10 +67,6 @@ STREAM_LENGTH = float(20)
 #The rate at which to resample the stream - DC PAMs minimum is 4us, AC PAMs is 250us
 STREAM_RESAMPLE_RATE = "1ms"
 
-#Optional Hardcode - Change if you want to speed up time in between runs
-HARDCODED_HARDWARE_TRIGGER=None #Valid answers are "Yes" or "No"
-HARDCODED_CONNECTION_TYPE=None #Valid answers are "QIS" or "QPS"
-HARDCODED_SPIN_LANGUAGE = None #Valid answers are "C" or "Python"
 #/USER TO CHANGE/
 
 #All in Current Working Directory
@@ -98,16 +79,11 @@ FILE_NAME_PAM_2 = "RawDataPam2.csv"
 #The name of the file after the 2 pam streams have been combined
 FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
 
-#Checks if connecting over TCP. If so, create a variable with the IP address
-if PAM_1_ADDRESS.split(":")[0] == "TCP":
-    ip_address_1 = PAM_1_ADDRESS.split(":")[1]
-if PAM_2_ADDRESS.split(":")[0] == "TCP":
-    ip_address_2 = PAM_2_ADDRESS.split(":")[1]
 
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
-    #logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
     # # To control specifically the quarchpy console log level use the following line:
     # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
@@ -231,7 +207,7 @@ def main():
     print("Combining CSV files...")
 
     #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
-    combined_csv = SyncUtils.csv_combiner(FILE_NAME_PAM_1, FILE_NAME_PAM_2)
+    combined_csv = syncUtils.csv_combiner(FILE_NAME_PAM_1, FILE_NAME_PAM_2)
 
     #PLACEHOLDER
     print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
@@ -239,12 +215,12 @@ def main():
     #Opens QPS, ready for user to manually import CSV
     if connection_type == "QPS":
         #Passes in the already open instance of QPS used for PAM 1
-        SyncUtils.view_csv_in_qps(qps1, combined_csv)
+        syncUtils.view_csv_in_qps(qps1, combined_csv)
         #Close the 2nd QPS instance
         closeQps(port=9823)
 
     else: #If QIS was used, open a QPS instance
-        SyncUtils.view_csv_in_qps(combined_csv, PAM_1_ADDRESS)
+        syncUtils.view_csv_in_qps(combined_csv, PAM_1_ADDRESS)
 
     print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_")
     print("If running again, rename the QPS recording, and CSV")
@@ -260,6 +236,10 @@ def launch_and_setup(connection_type):
         # Connects 1st pam device to the same QIS Instance - timeout of 20s timeout=str(20)
         pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type, qps_instance=qps1)
 
+        pam_1_qps = quarchQPS(pam1)
+
+        pam_1_qps.openConnection()
+
         #Create separate QIS backend
         startLocalQis(port=9723,rest_port=9781)
         #Creates separate QPS launch, connected to second QIS instance
@@ -268,8 +248,12 @@ def launch_and_setup(connection_type):
         #Connects the 2nd PAM to the 2nd QIS
         pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type, qps_instance=qps2)
 
+        pam_2_qps = quarchQPS(pam2)
+
+        pam_2_qps.openConnection()
+
         #Returns the pams, and qps objects
-        return pam1, pam2, qps1, qps2
+        return pam_1_qps, pam_2_qps, qps1, qps2
 
     else:  # QIS
         # If QIS is not already running

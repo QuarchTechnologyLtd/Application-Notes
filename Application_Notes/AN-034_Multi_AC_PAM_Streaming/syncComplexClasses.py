@@ -10,10 +10,14 @@ import psutil
 from quarchpy.device import get_quarch_device, quarchPPM
 from quarchpy.user_interface import visual_sleep
 
-import SyncUtils
+import syncUtils
 
 class UsingC(ABC):
+    #Assigns constructor params to local params
     def __init__(self, filename1:str, filename2:str, stream_length: float, resample_rate: str, pam_1_address: str, pam_2_address: str):
+        """
+        Constructor for abstract class UsingC. Cannot be directly called, but is called when child is called
+        """
         self.so_file = None
         self.filename1 = filename1
         self.filename2 = filename2
@@ -22,30 +26,38 @@ class UsingC(ABC):
         self.pam_1_address = pam_1_address
         self.pam_2_address = pam_2_address
 
+        #Checks if the PAMs are connected via IP, and therefore whether we can ping the device
+        #pam_1_address is in the form "TCP:1.1.1.1"
         if pam_1_address.split(":")[0] == "TCP" and pam_2_address.split(":")[0] == "TCP":
             self.ping_allowed = True
+            #Stores IP address as 1.1.1.1
             self.ip_address_1 = pam_1_address.split(":")[1]
             self.ip_address_2 = pam_2_address.split(":")[1]
 
-
+    #Uses OS specific child method
     @abstractmethod
     def compiler_check(self):
         pass
 
     def stream(self, connection_type):
-        # If both devices are connected via IP
+        """
+        This is called in the main script. This sets up the multiprocessing, and worker function
+        """
+
         print("Spinning up CPU...")
 
+        # If both devices are connected via IP
         if self.ping_allowed:
-            SyncUtils.ping_device(self.ip_address_1)
-            SyncUtils.ping_device(self.ip_address_2)
+            syncUtils.ping_device(self.ip_address_1)
+            syncUtils.ping_device(self.ip_address_2)
 
         self.coordinate_multiproc_trigger(self.stream_length, connection_type, self.filename1, self.filename2, self.so_file)
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
         """
-        Compiles the C code to keep the CPU busy and ready to execute
+        Compiles the C code to keep the CPU busy and ready to execute.
+        Checks whether compiled file is found already, and if it is then skips compiling
         Args:
             C_CODE: The C Code to be compiled - different whether Windows or Linux
 
@@ -111,6 +123,7 @@ class UsingC(ABC):
             # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
             pam_power_device = quarchPPM(pam)
 
+            #Resamples the stream to the same rate.
             pam_power_device.send_command(f"stream mode resample {self.resample_rate}")
 
         except Exception as e:
@@ -168,6 +181,11 @@ class UsingC(ABC):
             # CLOCK_MONOTONIC is the absolute elapsed time since system boot
             target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5 * 1e9)
 
+        #If both devices are connected over TCP, ping them to ensure they are awake and ready
+        if self.ping_allowed:
+            syncUtils.ping_device(self.ip_address_1)
+            syncUtils.ping_device(self.ip_address_2)
+
         # Creates Process objects
         process1 = multiprocessing.Process(target=self.sync_and_trigger_stream,
                                            args=(target,  pam_1_address, filename_1, so_file, connection_type,
@@ -176,6 +194,11 @@ class UsingC(ABC):
                                            args=(target, pam_2_address, filename_2, so_file, connection_type,
                                                  stream_duration))
         try:
+            # If both devices are connected over TCP, ping them to ensure they are awake and ready
+            if self.ping_allowed:
+                syncUtils.ping_device(self.ip_address_1)
+                syncUtils.ping_device(self.ip_address_2)
+
             # Starts the processes activity
             process1.start()
             process2.start()
@@ -187,7 +210,7 @@ class UsingC(ABC):
             process1.join()
             process2.join()
 
-        except KeyboardInterrupt:
+        except KeyboardInterrupt: #If user exits through Ctrl+C, terminate the child objects
             if process1.is_alive():
                 process1.terminate()
             if process2.is_alive():
@@ -196,10 +219,12 @@ class UsingC(ABC):
             process1.join()
             process2.join()
 
+            #Exit
             sys.exit(0)
 
 class CWindows(UsingC):
     def __init__(self, filename1, filename2, stream_length, resample_rate, pam_1_address, pam_2_address):
+        #Pass parameters to parents constructor
         super().__init__(filename1, filename2, stream_length,resample_rate, pam_1_address, pam_2_address)
 
         # C Code is different for Windows or POSIX
@@ -229,7 +254,11 @@ class CWindows(UsingC):
         p = psutil.Process(os.getpid())
         p.nice(psutil.HIGH_PRIORITY_CLASS)
 
+        #Checks compiler is available
         self.compiler_check()
+
+        self.ping_allowed = None
+
 
         #Compiles the C Script
         self.so_file = self.compile_c_lib(C_CODE)
@@ -237,10 +266,13 @@ class CWindows(UsingC):
 
 
     def compiler_check(self):
-        gcc_search_cmd = "where"
+        """
+        Checks if a C compiler is installed and added to the path of the system
+        Provides instructions if not installed
+        """
 
         try:
-            check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+            check = subprocess.run(["where", "gcc"], capture_output=True, text=True)
             if check.returncode != 0:  # Not Found
                 print("******** GCC CHECK FAILED *********\n")
                 print("Error: GNU Compiler Collection not found\n")
@@ -287,13 +319,20 @@ class CPosix(UsingC):
         except PermissionError:
             print("Warning: Run with sudo to enable high-priority timing.")
 
+        self.ping_allowed = None
+
+        #Checks compiler is installed and accessible
+        self.compiler_check()
+
         # Compiles the C Script
         self.so_file = self.compile_c_lib(C_CODE)
 
     def compiler_check(self):
-        gcc_search_cmd = "which"
+        """
+        Checks if a C compiler is installed and added to the path of the system
+        """
         try:
-            check = subprocess.run([gcc_search_cmd, "gcc"], capture_output=True, text=True)
+            check = subprocess.run(["which", "gcc"], capture_output=True, text=True)
             if check.returncode != 0:  # Not Found
                 print("Please install MinGW-w64")
                 print("On ubuntu please run the command\n")

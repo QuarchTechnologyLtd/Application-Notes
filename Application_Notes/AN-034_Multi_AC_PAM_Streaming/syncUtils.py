@@ -163,7 +163,8 @@ def spin_cpu_and_start_stream(pam_1_address: str, pam_2_address: str, resample_r
 
 def ping_device(ip_address:str):
     """
-    Pings the specified IP address, to ensure the device is awake and ready to connect
+    Pings the specified IP address, to ensure the device is awake and ready to connect. In testing this saved a few milliseconds
+    Likely due to Address Resolution Protocol
     Args:
         ip_address: The IP address to ping
 
