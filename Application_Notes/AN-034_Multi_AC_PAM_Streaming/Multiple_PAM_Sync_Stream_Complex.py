@@ -1,27 +1,28 @@
 """AN-034
-This Application Note uses 2 AC Power Analysis Modules to stream synchronously, with the user choosing to stream
+This Application Note uses 2 Power Analysis Modules to stream synchronously, with the user choosing to stream
 over QIS or over QPS. Either option will export a CSV, which is then merged, and opened in QPS.
 
-The application this has been designed for is for a high power environment, where a single AC PAM does not have the
-capability to measure the full load, so 2 AC PAMs are used. Both PAM data streams can be viewed side by side.
+If using AC PAMs, suggested application is a singular high power requirement source, where one AC PAM is not enough to capture all power.
+If using DC PAMs, suggested application is to measure the power used by different components of a single system. e.g. using a QTL2983 GPU PAM,
+and a QTL3069 Gen6 EDSFF PAM, in the same system.
 
 To reduce latency from one stream starting to the next stream starting, this script uses a compiled C file to spin
 up 2 CPU cores, and keep them busy, until the start_stream command is called. This requires the use of a compiler -
 GCC recommended. The two streams from both PAMs should start relatively synchronously.
 
-In testing, the desync was typically less than 5ms, with most being less than 1ms between 1 stream starting and the
+In testing, the desync was typically less than 5ms worst case scenario, with most being less than 1ms between 1 stream starting and the
 next stream starting. This is likely related to network latency.
 
 This AN-034 uses the quarchpy python package and demonstrates
 -Streaming from multiple instruments at the same time
 -Using multiple cores in parallel
 -Combining multiple CSVs into a single CSV, with a shared column
--Manually importing CSVs into QPS for comparison.
+-Automatically importing CSVs into QPS for comparison.
 
 ########### VERSION HISTORY ###########
 13/01/2026 - Andrew Steedman - Created
 16/01/2026 - Stuart Boon - Multi-threading
-20/01/2026 - Andrew Steedman - Working with QIS, and semi-automated
+24/02/2026 - Andrew Steedman - Separated simpler and complex versions
 
 ########### REQUIREMENTS ##############
 
@@ -61,6 +62,8 @@ import os
 PAM_1_ADDRESS = "USB:QTL2312-01-477"
 PAM_2_ADDRESS = "USB:QTL2312-01-035"
 
+
+
 #Stream length in seconds - QIS call takes float parameter
 STREAM_LENGTH = float(20)
 
@@ -83,9 +86,9 @@ FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
-    logging.basicConfig(level=logging.DEBUG)
+    #logging.basicConfig(level=logging.DEBUG)
     # # To control specifically the quarchpy console log level use the following line:
-    quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    #quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
     print("*****************************************")
@@ -181,6 +184,27 @@ def main():
         #connection_type = "QIS"
         #connection_type = "QPS"
 
+        #If user wants to use 3,4,5 PAMs require QIS
+        if connection_type == "QIS":
+            myQis = startLocalQis()
+
+            print("How many PAMs are you using?")
+            optionList = "2,3,4,5"
+            pam_count = user_interface.listSelection(title="Select PAM", message="How many PAMs?",
+                                                     selectionList=optionList, nice=True)
+
+            pam_configs = []
+            for i in range(int(pam_count)):
+                selected_pam = myQis.get_qis_module_selection(additional_options=["Rescan", "All Con Types", "Ip Scan", "Quit"])
+
+                if selected_pam == "Quit":
+                    exit(0)
+
+                pam_configs.append({
+                    "address": selected_pam,
+                    "filename": f"RawDataPam{i+1}.csv"
+                })
+
         #Similar to switch case in other languages - reduces indents and easier to read
         match (connection_type, os.name):
             case ("QIS", "nt"): #QIS, Windows, C
@@ -200,8 +224,6 @@ def main():
             case _: #Catchall - OS is the only one that isn't binary - i.e. qis or qps, c or python
                 print("OS not currently supported. Please use a Windows or POSIX system")
                 raise OSError("Unsupported operating system")
-
-        #startLocalQis()
 
         syncStreamObj.stream(connection_type)
 

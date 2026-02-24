@@ -14,25 +14,27 @@ import syncUtils
 
 class UsingC(ABC):
     #Assigns constructor params to local params
-    def __init__(self, filename1:str, filename2:str, stream_length: float, resample_rate: str, pam_1_address: str, pam_2_address: str):
+    def __init__(self, pam_configs, stream_length: float, resample_rate: str, ):
         """
         Constructor for abstract class UsingC. Cannot be directly called, but is called when child is called
         """
         self.so_file = None
-        self.filename1 = filename1
-        self.filename2 = filename2
+        self.pam_config = pam_configs
         self.stream_length = stream_length
         self.resample_rate = resample_rate
-        self.pam_1_address = pam_1_address
-        self.pam_2_address = pam_2_address
+
+        self.ip_addresses = []
 
         #Checks if the PAMs are connected via IP, and therefore whether we can ping the device
         #pam_1_address is in the form "TCP:1.1.1.1"
-        if pam_1_address.split(":")[0] == "TCP" and pam_2_address.split(":")[0] == "TCP":
-            self.ping_allowed = True
-            #Stores IP address as 1.1.1.1
-            self.ip_address_1 = pam_1_address.split(":")[1]
-            self.ip_address_2 = pam_2_address.split(":")[1]
+        for pam in pam_configs:
+            if pam["address"].split(":")[0] == "TCP":
+                self.ping_allowed = True
+                #Stores IP address as 1.1.1.1
+                self.ip_address = pam["address"].split(":")[1]
+                #Adds to list of IP addresses
+                self.ip_addresses.append(self.ip_address)
+
 
     #Uses OS specific child method
     @abstractmethod
@@ -48,10 +50,17 @@ class UsingC(ABC):
 
         # If both devices are connected via IP
         if self.ping_allowed:
-            syncUtils.ping_device(self.ip_address_1)
-            syncUtils.ping_device(self.ip_address_2)
+            for ip_address in self.ip_addresses:
+                syncUtils.ping_device(ip_address)
 
-        self.coordinate_multiproc_trigger(self.stream_length, self.pam_1_address, self.pam_2_address, connection_type, self.filename1, self.filename2, self.so_file)
+
+        self.coordinate_multiproc_trigger(self.stream_length, connection_type, self.so_file)
+
+        """
+                    stream_duration: float,
+            pam_configs,
+            connection_type: str = "QIS",
+            so_file: str = "spin_core.dll"):"""
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
@@ -144,22 +153,16 @@ class UsingC(ABC):
     def coordinate_multiproc_trigger(
             self,
             stream_duration: float,
-            pam_1_address: str,
-            pam_2_address: str,
+            pam_configs,
             connection_type: str = "QIS",
-            filename_1: str = "RawDataPam1.csv",
-            filename_2: str = "RawDataPam2.csv",
             so_file: str = "spin_core.dll"):
         """
         The worker function to be called
         Args:
             stream_duration: Stream length
-            pam_1_address: Address of PAM 1
-            pam_2_address: Address of PAM 2
+            pam_configs: List of PAMs connected and filenames
             so_file: The compiled C code
             connection_type: Default QIS, but can be overwritten to QPS
-            filename_1: The file of the stream data for PAM 1
-            filename_2: The file of the stream data for PAM 2
 
 
         Returns None:
@@ -177,10 +180,7 @@ class UsingC(ABC):
             # CLOCK_MONOTONIC is the absolute elapsed time since system boot
             target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5 * 1e9)
 
-        #If both devices are connected over TCP, ping them to ensure they are awake and ready
-        if self.ping_allowed:
-            syncUtils.ping_device(self.ip_address_1)
-            syncUtils.ping_device(self.ip_address_2)
+        processes = []
 
         common_args = {
             "target_ns": target,
@@ -190,41 +190,34 @@ class UsingC(ABC):
             "connection_type": connection_type
         }
 
-        kwargs1 = {**common_args, "pam_address": pam_1_address, "filename": filename_1}
-        kwargs2 = {**common_args, "pam_address": pam_2_address, "filename": filename_2}
+        # If both devices are connected via IP
+        if self.ping_allowed:
+            for ip_address in self.ip_addresses:
+                syncUtils.ping_device(ip_address)
 
-        # Creates Process objects
-        process1 = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=kwargs1)
-        process2 = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=kwargs2)
+        #Able to select how many PAMs are connected
+        for pam in pam_configs:
+            worker_kwargs = {**common_args,
+                             "pam_address": pam["address"], "filename": pam["filename"]}
 
-        try:
+        # Create Process objects
+            process = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=worker_kwargs)
+
             # If both devices are connected over TCP, ping them to ensure they are awake and ready
             if self.ping_allowed:
-                syncUtils.ping_device(self.ip_address_1)
-                syncUtils.ping_device(self.ip_address_2)
+                for ip_address in self.ip_addresses:
+                    syncUtils.ping_device(ip_address)
 
             # Starts the processes activity
-            process1.start()
-            process2.start()
+            process.start()
 
-            # Shows progress bar for stream length with an extra 5 seconds
-            visual_sleep((stream_duration + 5), title="Stream in progress")
+            processes.append(process)
 
+
+        for process in processes:
             # Blocks the main script until both processes are done
-            process1.join()
-            process2.join()
+            process.join()
 
-        except KeyboardInterrupt: #If user exits through Ctrl+C, terminate the child objects
-            if process1.is_alive():
-                process1.terminate()
-            if process2.is_alive():
-                process2.terminate()
-
-            process1.join()
-            process2.join()
-
-            #Exit
-            sys.exit(0)
 
 class CWindows(UsingC):
     def __init__(self, filename1, filename2, stream_length, resample_rate, pam_1_address, pam_2_address):
