@@ -51,7 +51,7 @@ class UsingC(ABC):
             syncUtils.ping_device(self.ip_address_1)
             syncUtils.ping_device(self.ip_address_2)
 
-        self.coordinate_multiproc_trigger(self.stream_length, connection_type, self.filename1, self.filename2, self.so_file)
+        self.coordinate_multiproc_trigger(self.stream_length, self.pam_1_address, self.pam_2_address, connection_type, self.filename1, self.filename2, self.so_file)
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
@@ -95,44 +95,40 @@ class UsingC(ABC):
             return None
 
     @staticmethod
-    def sync_and_trigger_stream(self,
-                                target_ns,
+    def sync_and_trigger_stream(target_ns,
                                 pam_address: str,
                                 filename: str,
                                 stream_duration: float,
+                                resample_rate: str,
                                 so_file: str = "spin_core.dll",
                                 connection_type: str = "QIS"):
         """
         This is a worker function. This is executed on different cores for different PAM devices
         Args:
-            self
             target_ns: The time the system aims to execute at
-            so_file: The compiled C code
             pam_address: The address of the PAM to be connected to - in the format "TCP:1.1.1.1"
             filename: The file to write to
-            connection_type: Default QIS, but can be overwritten to QPS
+            so_file: The compiled C code
+            resample_rate: Rate at which to resample
             stream_duration: Stream length - how long to stream for
+            connection_type: Default QIS, but can be overwritten to QPS
+
 
         Returns None:
         """
 
         try:
             # Connects 1st pam device to the same QIS Instance - timeout of 20s
-            pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type, timeout=str(20))
+            pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type)
 
             # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
             pam_power_device = quarchPPM(pam)
 
             #Resamples the stream to the same rate.
-            pam_power_device.send_command(f"stream mode resample {self.resample_rate}")
+            pam_power_device.send_command(f"stream mode resample {resample_rate}")
 
-        except Exception as e:
-            print(f"Could not connect to PAM: {e}")
-            sys.stdout.flush()  # Forces output
-
-        try:
             # Loads the compiled file
-            lib = ctypes.CDLL(so_file)
+            lib = ctypes.CDLL(os.path.abspath(so_file))
 
             # Calls the spin_until function inside, keeps CPU busy and ready
             lib.spin_until(ctypes.c_int64(target_ns))
@@ -186,13 +182,21 @@ class UsingC(ABC):
             syncUtils.ping_device(self.ip_address_1)
             syncUtils.ping_device(self.ip_address_2)
 
+        common_args = {
+            "target_ns": target,
+            "stream_duration": stream_duration,
+            "resample_rate": self.resample_rate,
+            "so_file": so_file,
+            "connection_type": connection_type
+        }
+
+        kwargs1 = {**common_args, "pam_address": pam_1_address, "filename": filename_1}
+        kwargs2 = {**common_args, "pam_address": pam_2_address, "filename": filename_2}
+
         # Creates Process objects
-        process1 = multiprocessing.Process(target=self.sync_and_trigger_stream,
-                                           args=(target,  pam_1_address, filename_1, so_file, connection_type,
-                                                 stream_duration))
-        process2 = multiprocessing.Process(target=self.sync_and_trigger_stream,
-                                           args=(target, pam_2_address, filename_2, so_file, connection_type,
-                                                 stream_duration))
+        process1 = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=kwargs1)
+        process2 = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=kwargs2)
+
         try:
             # If both devices are connected over TCP, ping them to ensure they are awake and ready
             if self.ping_allowed:

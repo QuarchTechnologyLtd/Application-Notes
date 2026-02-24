@@ -85,7 +85,7 @@ def main():
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
     logging.basicConfig(level=logging.DEBUG)
     # # To control specifically the quarchpy console log level use the following line:
-    # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
     print("*****************************************")
@@ -184,9 +184,11 @@ def main():
         #Similar to switch case in other languages - reduces indents and easier to read
         match (connection_type, os.name):
             case ("QIS", "nt"): #QIS, Windows, C
+                startLocalQis()
                 syncStreamObj = syncComplexClasses.CWindows(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
 
             case ("QIS", "posix"): #QIS, POSIX, C
+                startLocalQis()
                 syncStreamObj = syncComplexClasses.CPosix(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
 
             case ("QPS", "nt"): #QPS, Windows, C
@@ -199,7 +201,7 @@ def main():
                 print("OS not currently supported. Please use a Windows or POSIX system")
                 raise OSError("Unsupported operating system")
 
-        startLocalQis()
+        #startLocalQis()
 
         syncStreamObj.stream(connection_type)
 
@@ -241,7 +243,7 @@ def launch_and_setup(connection_type):
         pam_1_qps.openConnection()
 
         #Create separate QIS backend
-        startLocalQis(port=9723,rest_port=9781)
+        #startLocalQis(port=9723,rest_port=9781)
         #Creates separate QPS launch, connected to second QIS instance
         qps2 = startLocalQps(startQPSMinimised=False,port=9823, qis_port=9723, qis_rest_port=9781)
 
