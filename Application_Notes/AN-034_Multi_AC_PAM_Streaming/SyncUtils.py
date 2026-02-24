@@ -36,7 +36,7 @@ def csv_combiner(csv_file_1:str, csv_file_2:str):
     #time, 1_B,1_C,..., 1_XXX, 2_B,2_C,...,2_XXX
     merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
 
-    merged_data.to_csv("CombinedData.csv", index=False)
+    combined_csv = merged_data.to_csv("CombinedData.csv", index=False)
 
     path = os.path.abspath("CombinedData.csv")
     #Changes the dataframe to CSV
@@ -75,7 +75,7 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
     response = qps_instance.sendCommand(command)
     print(response)
 
-def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int):
+def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int, shared_timestamp):
     """
     Used in the simple version to spin up the CPU core, using python only, and then start stream when a time has passed
     :param pam_address: PAM - The IP address of the PAM to stream
@@ -105,6 +105,7 @@ def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_ra
             #Start stream
             pam.start_stream(filename, stream_duration=stream_length)
             #Exit loop
+            shared_timestamp.value = time.clock_gettime_ns(clock_id) if clock_id else time.time_ns()
             break
 
 def spin_cpu_and_start_stream(pam_1_address: str, pam_2_address: str, resample_rate: str, stream_length: int):
