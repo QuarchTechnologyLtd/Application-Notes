@@ -65,8 +65,8 @@ import subprocess #Shell commands
 
 #USER TO CHANGE - Constants, Should be static while program is running
 # Hardcoded PAM Addresses
-PAM_1_ADDRESS = "TCP:10.0.8.107"
-PAM_2_ADDRESS = "TCP:10.0.8.59"
+PAM_1_ADDRESS = "USB:QTL1999-06-007"
+PAM_2_ADDRESS = "USB:QTL2312-01-040"
 
 #Stream length in seconds - QIS call takes float parameter
 STREAM_LENGTH = float(60)
@@ -181,15 +181,21 @@ def main():
     lib_path = compile_c_lib(C_CODE)
 
     #Pings the IP Addresses before starting the stream - Comment out if using USB
-    ping_device(ip_address_1)
-    ping_device(ip_address_2)
+    # ping_device(ip_address_1)
+    # ping_device(ip_address_2)
 
     if lib_path: #If the C_CODE has compiled correctly
         print("Compiled successfully, starting stream in 5 seconds...")
 
         coordinate_multiproc_trigger(lib_path, connection_type, FILE_NAME_PAM_1, FILE_NAME_PAM_2, STREAM_LENGTH)
 
-        os.remove(lib_path)
+        try:
+            os.remove(lib_path)
+            # Also clean up the .c file while we are at it
+            if os.path.exists("spin_core.c"):
+                os.remove("spin_core.c")
+        except PermissionError:
+            print("Note: Could not delete spin_core.dll automatically (file still locked). You can delete it manually later.")
 
     print("Stream completed\n")
     print("Combining CSV files...")
@@ -302,11 +308,6 @@ def sync_and_trigger_stream(target_ns,
         #Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
         pam_power_device = quarchPPM(pam)
 
-    except Exception as e:
-        print(f"Could not connect to PAM: {e}")
-        sys.stdout.flush() #Forces output
-
-    try:
         #Loads the compiled file
         lib = ctypes.CDLL(so_file)
 
@@ -366,6 +367,8 @@ def coordinate_multiproc_trigger(
     #Blocks the main script until both processes are done
     process1.join()
     process2.join()
+
+    time.sleep(1) #Sleep for a second to ensure files are closed before moving on
 
 def ping_device(ip_address:str):
     """
