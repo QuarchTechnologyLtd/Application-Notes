@@ -36,9 +36,9 @@ def csv_combiner(csv_file_1:str, csv_file_2:str):
     #time, 1_B,1_C,..., 1_XXX, 2_B,2_C,...,2_XXX
     merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
 
-    combined_csv = merged_data.to_csv("CombinedData.csv", index=False)
+    merged_data.to_csv("CombinedData.csv", index=False)
 
-    path = os.path.abspath(combined_csv)
+    path = os.path.abspath("CombinedData.csv")
     #Changes the dataframe to CSV
     print(f"CSV can be found :{path}")
     return path

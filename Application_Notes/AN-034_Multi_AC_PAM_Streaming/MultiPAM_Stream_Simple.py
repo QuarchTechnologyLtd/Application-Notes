@@ -2,16 +2,22 @@
 This script is a simple way of streaming from 2 PAMs together. These can either be standard DC PAMs, or can be AC PAMs
 This streams over QIS, then has the option to combine both datasets together, and view in QPS.
 
-This is a simpler, more user-friendly way of operating multiple PAMs. Through testing, the hardware trigger has a delay of
-, the sequential start has a delay of , and the simpler multiprocessing has a delay of .
-If shorter delays are required, see MultiPAM_Stream_Complex. Reducing the delay adds complexity.
+This is a simpler, more user-friendly way of operating multiple PAMs. If shorter delays are required, see MultiPAM_Stream_Complex.
+Reducing the delay adds complexity. In testing, found that (on the same system)
+The hardware trigger has a minimum delay of 3ms with a mean delay of 9ms
+The multiprocessing here has a minimum delay of 15.8ms, with a mean delay of 23ms.
+The sequential start has a minimum delay of 36.8ms with a mean delay of 65ms.
 
 The PAM streams can either be started with the PAMs connected by a triggering cable,or a software trigger.
-If using DC PAMs (QTL2312) suggested to use a triggering cable
+If using PAMs with a triggering cable, suggested to use it
 For PAMs without a triggering cable (e.g. AC PAMs), you will need to use a software trigger.
 
+This will configure both PAMs to have the same resample rate, stream for the same length. The stream runs, and 2 CSVs are recorded.
+There is then an option to automatically merge the CSVs, convert the CSVs to QPS Recording, and then open the QPS recording, and view
+the PAM data side by side.
+
 ########### VERSION HISTORY ###########
-24/02/2026 - Andrew Steedman - Separated from MultiPAM_Stream_Complex.py
+24/02/2026 - Andrew Steedman - Branched from MultiPAM_Stream_Complex.py
 
 ########### REQUIREMENTS ##############
 
@@ -23,7 +29,7 @@ For PAMs without a triggering cable (e.g. AC PAMs), you will need to use a softw
 
 ########### INSTRUCTIONS ##############
 
-1 - Setup the PAM Fixture
+1 - Set up the PAM Fixture
 2 - Connect the PAMs to the PC
 3 - Run the script
 """
@@ -41,7 +47,7 @@ from quarchpy.user_interface import showYesNoDialog, showDialog, visual_sleep
 import SyncUtils
 
 #Length of stream in seconds
-STREAM_LENGTH = 10
+STREAM_LENGTH = 60
 
 #Resample rate
 RESAMPLE_RATE = "1ms"
@@ -69,18 +75,16 @@ def main():
     # If you know the name of the module you would like to talk to, then you can skip module selection and
     # hardcode the string using the serial number or IP address
     my_pam_1 =  myQis.GetQisModuleSelection(additionalOptions=['Rescan', 'All Con Types', 'Ip Scan','Quit'])
-
     print("PAM 1 is: " + my_pam_1 + "\n")
 
     my_pam_2 =  myQis.GetQisModuleSelection(additionalOptions=['Rescan', 'All Con Types', 'Ip Scan','Quit'])
-
     print("PAM 2 is: " + my_pam_1 + "\n")
 
     # The return from the module selection is a device ID string that we can use to connect to.
     # If you know the name of the module you would like to talk to, then you can skip module selection and
     # hardcode the string using the serial number or IP address
-    # my_pam_1 = "USB:QTL2312-01-001"
-    # my_pam_2 = "TCP:192.168.1.25"
+    #my_pam_1 = "USB:QTL2312-01-477"
+    #my_pam_2 = "TCP:10.0.8.95"
 
     # Upgrades the PAMs to PPM devices - more features
     my_pam_1_device = get_quarch_device(my_pam_1, ConType="QIS")
@@ -135,9 +139,8 @@ def main():
         #Simplest option - start them sequentially
         pam_1_power_device.start_stream("RawDataPam1.csv", stream_duration=STREAM_LENGTH)
         pam_2_power_device.start_stream("RawDataPam2.csv", stream_duration=STREAM_LENGTH)
-        visual_sleep(STREAM_LENGTH)
         print("Streaming...")
-
+        visual_sleep(STREAM_LENGTH+3)
 
         #This is a quicker way of starting the stream - Uses 2 CPU cores, that are kept busy, and the
         #pam command to start streaming is waiting to jump in - quicker but more complex
