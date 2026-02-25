@@ -58,18 +58,15 @@ import time
 import os
 
 #USER TO CHANGE - Constants, Should be static while program is running
-# Hardcoded PAM Addresses
+# Hardcoded PAM Addresses - used if 2 pams are used
 PAM_1_ADDRESS = "USB:QTL2312-01-477"
 PAM_2_ADDRESS = "USB:QTL2312-01-035"
-
-
 
 #Stream length in seconds - QIS call takes float parameter
 STREAM_LENGTH = float(20)
 
 #The rate at which to resample the stream - DC PAMs minimum is 4us, AC PAMs is 250us
 STREAM_RESAMPLE_RATE = "1ms"
-
 #/USER TO CHANGE/
 
 #All in Current Working Directory
@@ -79,8 +76,6 @@ FILE_NAME_PAM_1 = "RawDataPam1.csv"
 #Filename of the CSV output from PAM2
 FILE_NAME_PAM_2 = "RawDataPam2.csv"
 
-#The name of the file after the 2 pam streams have been combined
-FILE_NAME_COMBINED = os.path.join(os.getcwd(),"CombinedPamData.csv")
 
 
 def main():
@@ -189,10 +184,14 @@ def main():
             myQis = startLocalQis()
 
             print("How many PAMs are you using?")
-            optionList = "2,3,4,5"
+            #Quit is an option to match up indexing - 2 pams enter 2, 4 pams enter 4
+            optionList = "Quit,2,3,4,5"
             pam_count = user_interface.listSelection(title="Select PAM", message="How many PAMs?",
                                                      selectionList=optionList, nice=True)
+            if pam_count == "Quit":
+                exit(0)
 
+            #User selects how many PAMs
             pam_configs = []
             for i in range(int(pam_count)):
                 selected_pam = myQis.get_qis_module_selection(additional_options=["Rescan", "All Con Types", "Ip Scan", "Quit"])
@@ -205,21 +204,34 @@ def main():
                     "filename": f"RawDataPam{i+1}.csv"
                 })
 
+            #Uncomment this if wanting to hardcode, and comment in section above
+            #pam_configs = [{"address": "USB:QTL2312-01-477", "filename": "RawDataPam1.csv"},
+            #               {"address": "USB:QTL2312-01-035", "filename": "RawDataPam2.csv"},
+            #               {"address": "TCP:10.0.8.95", "filename": "RawDataPam3.csv"},
+            #               {"address": "USB:QTL2312-01-001", "filename": "RawDataPam4.csv"},
+            #               {"address": "TCP:10.0.8.95", "filename": "RawDataPam5.csv"}]
+
+        else: #QPS
+            pam_configs = [{"address": PAM_1_ADDRESS, "filename": "RawDataPam1.csv"},
+                           {"address": PAM_2_ADDRESS, "filename": "RawDataPam2.csv"}]
+
         #Similar to switch case in other languages - reduces indents and easier to read
         match (connection_type, os.name):
             case ("QIS", "nt"): #QIS, Windows, C
                 startLocalQis()
-                syncStreamObj = syncComplexClasses.CWindows(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
+                syncStreamObj = syncComplexClasses.CWindows(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
 
             case ("QIS", "posix"): #QIS, POSIX, C
                 startLocalQis()
-                syncStreamObj = syncComplexClasses.CPosix(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
+                syncStreamObj = syncComplexClasses.CPosix(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
 
             case ("QPS", "nt"): #QPS, Windows, C
-                syncStreamObj = syncComplexClasses.CWindows(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
+                #TODO Start QPS
+                syncStreamObj = syncComplexClasses.CWindows(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
 
             case ("QPS", "posix"): #QPS, POSIX, C
-                syncStreamObj = syncComplexClasses.CPosix(FILE_NAME_PAM_1,FILE_NAME_PAM_2,STREAM_LENGTH, STREAM_RESAMPLE_RATE, PAM_1_ADDRESS, PAM_2_ADDRESS)
+                #TODO Start QPS
+                syncStreamObj = syncComplexClasses.CPosix(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
 
             case _: #Catchall - OS is the only one that isn't binary - i.e. qis or qps, c or python
                 print("OS not currently supported. Please use a Windows or POSIX system")
@@ -231,7 +243,8 @@ def main():
     print("Combining CSV files...")
 
     #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
-    combined_csv = syncUtils.csv_combiner(FILE_NAME_PAM_1, FILE_NAME_PAM_2)
+    file_list = [pam["filename"] for pam in pam_configs]
+    combined_csv = syncUtils.csv_combiner(file_list)
 
     #PLACEHOLDER
     print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")

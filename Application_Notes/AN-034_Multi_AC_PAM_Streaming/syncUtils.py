@@ -11,32 +11,36 @@ from quarchpy.qps import startLocalQps
 from quarchpy.device import quarchPPM, get_quarch_device
 
 
-def csv_combiner(csv_file_1:str, csv_file_2:str):
+def csv_combiner(file_list):
     """
     Merges the PAM Stream CSVs, keeps shared time column, renames and adds 1_ and 2_ to the column headers
     Args:
-        csv_file_1: CSV file 1
-        csv_file_2: CSV file 2
+        file_list: List of file paths
 
     Returns CSV of the combined data:
     """
-    #Uses pandas, and creates a dataframe of each csv
-    csv1 = pd.read_csv(csv_file_1)
-    csv2 = pd.read_csv(csv_file_2)
+
 
     #Column name of the time column - This will be the same in both CSVs, and should not be changed
     #Time uS may change according to sample time
     shared_time_column = "Time uS"
+    master_df = None
 
-    #Adds the 1_ or 2_ prefix to each individual data frame, except the time column
-    csv1_prefix = csv1.add_prefix("1_").rename(columns={"1_" + shared_time_column: shared_time_column})
-    csv2_prefix = csv2.add_prefix("2_").rename(columns={"2_" + shared_time_column: shared_time_column})
+    for i, file_path in enumerate(file_list):
+        df = pd.read_csv(file_path)
+        prefix = f"{i+1}_"
+        df = df.add_prefix(prefix).rename(columns={prefix + shared_time_column: shared_time_column})
 
-    #Merge the two data frames - format being
-    #time, 1_B,1_C,..., 1_XXX, 2_B,2_C,...,2_XXX
-    merged_data = pd.merge(csv1_prefix, csv2_prefix, on=shared_time_column, how="outer")
+        if master_df is None:
+            # This is the first file, it becomes the base of our master dataframe
+            master_df = df
+        else:
+            # Merge subsequent files onto the master
+            # 'outer' merge ensures we don't lose data if one PAM has more samples than another
+            master_df = pd.merge(master_df, df, on=shared_time_column, how="outer")
 
-    combined_csv = merged_data.to_csv("CombinedData.csv", index=False)
+
+    combined_csv = master_df.to_csv("CombinedData.csv", index=False)
 
     path = os.path.abspath("CombinedData.csv")
     #Changes the dataframe to CSV

@@ -14,12 +14,12 @@ import syncUtils
 
 class UsingC(ABC):
     #Assigns constructor params to local params
-    def __init__(self, pam_configs, stream_length: float, resample_rate: str, ):
+    def __init__(self, pam_configs, stream_length: float, resample_rate: str):
         """
         Constructor for abstract class UsingC. Cannot be directly called, but is called when child is called
         """
         self.so_file = None
-        self.pam_config = pam_configs
+        self.pam_configs = pam_configs
         self.stream_length = stream_length
         self.resample_rate = resample_rate
 
@@ -54,7 +54,8 @@ class UsingC(ABC):
                 syncUtils.ping_device(ip_address)
 
 
-        self.coordinate_multiproc_trigger(self.stream_length, connection_type, self.so_file)
+
+        self.coordinate_multiproc_trigger(self.stream_length, self.pam_configs, connection_type, self.so_file)
 
         """
                     stream_duration: float,
@@ -190,7 +191,7 @@ class UsingC(ABC):
             "connection_type": connection_type
         }
 
-        # If both devices are connected via IP
+        # If all devices are connected via IP
         if self.ping_allowed:
             for ip_address in self.ip_addresses:
                 syncUtils.ping_device(ip_address)
@@ -198,19 +199,14 @@ class UsingC(ABC):
         #Able to select how many PAMs are connected
         for pam in pam_configs:
             worker_kwargs = {**common_args,
-                             "pam_address": pam["address"], "filename": pam["filename"]}
+                             "pam_address": pam["address"],
+                             "filename": pam["filename"]}
 
         # Create Process objects
             process = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=worker_kwargs)
 
-            # If both devices are connected over TCP, ping them to ensure they are awake and ready
-            if self.ping_allowed:
-                for ip_address in self.ip_addresses:
-                    syncUtils.ping_device(ip_address)
-
             # Starts the processes activity
             process.start()
-
             processes.append(process)
 
 
@@ -219,10 +215,11 @@ class UsingC(ABC):
             process.join()
 
 
+
 class CWindows(UsingC):
-    def __init__(self, filename1, filename2, stream_length, resample_rate, pam_1_address, pam_2_address):
+    def __init__(self, pam_configs, stream_length, resample_rate):
         #Pass parameters to parents constructor
-        super().__init__(filename1, filename2, stream_length,resample_rate, pam_1_address, pam_2_address)
+        super().__init__(pam_configs, stream_length, resample_rate)
 
         # C Code is different for Windows or POSIX
         C_CODE = """
@@ -283,8 +280,8 @@ class CWindows(UsingC):
             raise ModuleNotFoundError
 
 class CPosix(UsingC):
-    def __init__(self,filename1, filename2, stream_length,resample_rate, pam_1_address, pam_2_address):
-        super().__init__(filename1, filename2, stream_length,resample_rate, pam_1_address, pam_2_address)
+    def __init__(self, pam_configs, stream_length, resample_rate):
+        super().__init__(pam_configs, stream_length, resample_rate)
 
         C_CODE = """
         #include <time.h>

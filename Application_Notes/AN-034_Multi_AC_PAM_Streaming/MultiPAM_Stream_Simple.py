@@ -62,7 +62,7 @@ def main():
 
     print("*****************************************")
     print("*****************************************\n")
-    print("AN-034 - Multiple PAM Synchronous Stream")
+    print("AN-034 - Multiple PAM Synchronous Stream Simple")
     print("Connect the devices to the same host PC")
     print("\n*****************************************")
     print("*****************************************")
@@ -157,10 +157,11 @@ def main():
     if post_process == "Yes":
         #If yes, combine the 2 csvs into 1
         #Combines the CSVs with a shared time column
-        combined_csv_path = SyncUtils.csv_combiner("RawDataPam1.csv", "RawDataPam2.csv")
+        filelist = ["RawDataPam1.csv", "RawDataPam2.csv"]
+        combined_csv_path = syncUtils.csv_combiner(filelist)
 
         #And then convert and open in QPS
-        SyncUtils.view_csv_in_qps(combined_csv_path, my_pam_1)
+        syncUtils.view_csv_in_qps(combined_csv_path, my_pam_1)
 
 
 if __name__ == "__main__":
