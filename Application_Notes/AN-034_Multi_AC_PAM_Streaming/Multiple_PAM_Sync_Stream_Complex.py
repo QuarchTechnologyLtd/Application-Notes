@@ -259,7 +259,7 @@ def main():
     else: #If QIS was used, open a QPS instance
         syncUtils.view_csv_in_qps(combined_csv, PAM_1_ADDRESS)
 
-    print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_")
+    print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_, and so on")
     print("If running again, rename the QPS recording, and CSV")
 
     sys.exit(0)
