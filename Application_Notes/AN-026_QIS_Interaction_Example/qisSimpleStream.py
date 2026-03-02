@@ -1,14 +1,18 @@
 import tkinter.filedialog
 
+import quarchpy
 from quarchpy.device import *
 from quarchpy.qis import *
 from quarchpy.user_interface.user_interface import quarchSleep
 from quarchpy import __version__ as quarchpyVersion
 import time, datetime
 
-'''
-Select the device you want to connect to here!
-'''
+# # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+# # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+# logging.basicConfig(level=logging.DEBUG)
+# # To control specifically the quarchpy console log level use the following line:
+# quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+# # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
 
 def main():

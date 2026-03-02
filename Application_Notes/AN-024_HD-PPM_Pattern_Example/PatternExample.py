@@ -33,6 +33,13 @@ import logging
 import quarchpy
 from quarchpy.device import *
 
+# # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+# # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+# logging.basicConfig(level=logging.DEBUG)
+# # To control specifically the quarchpy console log level use the following line:
+# quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+# # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
+
 # USER CHANGABLE VARIABLES
 start_magnitude = 35
 end_magnitude = 100
@@ -44,9 +51,6 @@ def main():
     '''
     Main function, containing the example code to execute
     '''
-
-    # Enable logging if required
-    # logging.basicConfig (filename="app.log", filemode='w', level=logging.DEBUG)
 
     # Required min version for this application note
     quarchpy.requiredQuarchpyVersion("2.0.20")
