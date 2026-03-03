@@ -10,36 +10,40 @@ from quarchpy.connection_specific.connection_QPS import QpsInterface
 from quarchpy.qps import startLocalQps
 from quarchpy.device import quarchPPM, get_quarch_device
 
-
 def csv_combiner(file_list):
     """
     Merges the PAM Stream CSVs, keeps shared time column, renames and adds 1_ and 2_ to the column headers
+    Uses pandas
     Args:
         file_list: List of file paths
 
     Returns CSV of the combined data:
     """
 
-
     #Column name of the time column - This will be the same in both CSVs, and should not be changed
     #Time uS may change according to sample time
     shared_time_column = "Time uS"
+    #Create empty dataframe
     master_df = None
 
+    #For each file in the file list
     for i, file_path in enumerate(file_list):
+        #Convert to a dataframe
         df = pd.read_csv(file_path)
+        #Create the prefix of 1_xxx, 2_xxx...
         prefix = f"{i+1}_"
+        #Add the prefix to the columns
         df = df.add_prefix(prefix).rename(columns={prefix + shared_time_column: shared_time_column})
 
         if master_df is None:
-            # This is the first file, it becomes the base of our master dataframe
+            #If this is the first file, it becomes the base of our master dataframe
             master_df = df
         else:
-            # Merge subsequent files onto the master
-            # 'outer' merge ensures we don't lose data if one PAM has more samples than another
+            #Merge subsequent files onto the master
+            #'outer' merge ensures we don't lose data if one PAM has more samples than another
             master_df = pd.merge(master_df, df, on=shared_time_column, how="outer")
 
-
+    #Convert the dataframe to CSV
     combined_csv = master_df.to_csv("CombinedData.csv", index=False)
 
     path = os.path.abspath("CombinedData.csv")
@@ -52,7 +56,8 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
     Opens QPS and reconnects to PAM 1
     Used for user to view the CSVs as QPS Traces
 
-    :parameter csv_file: The CSV to view
+    :parameter csv_path: The full CSV path to view
+    :parameter pam_address: PAM - The address of the PAM to reconnect to
     :parameter qps_instance: QpsInterface - If QPS is already open, use that, otherwise a new instance will be launched
 
     Returns: None
@@ -65,23 +70,27 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
     #Connects to the pam specified
     qps_instance.connect(pam_address)
 
+    #Get the current working directory, create new folder and target recording
+    #If this folder exists already, will fail
     file_path = os.getcwd() + rf"\sync_stream\sync_stream.qps"
 
     print("Converting CSV file to QPS")
 
+    #Formulates QPS command to convert CSV to QPS recording
     command = f'$convert csv from="{csv_path}" to="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
+    #Sends the command
+    qps_instance.sendCommand(command)
 
     print(f"Opening QPS Recording. Stored: {file_path}")
 
+    #Formulates QPS command to open the QPS file created
     command = f'$open recording qpsFile="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
+    qps_instance.sendCommand(command)
 
-def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int, shared_timestamp):
+
+def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int):
     """
-    Used in the simple version to spin up the CPU core, using python only, and then start stream when a time has passed
+    Simple version to spin up the CPU core, using python only, and then start stream when a time has passed
     :param pam_address: PAM - The IP address of the PAM to stream
     :param filename: The filename to save data to
     :param target_ns: Target time to spin up until
@@ -109,7 +118,6 @@ def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_ra
             #Start stream
             pam.start_stream(filename, stream_duration=stream_length)
             #Exit loop
-            shared_timestamp.value = time.clock_gettime_ns(clock_id) if clock_id else time.time_ns()
             break
 
 def spin_cpu_and_start_stream(pam_1_address: str, pam_2_address: str, resample_rate: str, stream_length: int):
@@ -162,8 +170,6 @@ def spin_cpu_and_start_stream(pam_1_address: str, pam_2_address: str, resample_r
 
         #Exit the script
         exit(0)
-
-
 
 def ping_device(ip_address:str):
     """
