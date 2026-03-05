@@ -1,22 +1,41 @@
-import ctypes
-import multiprocessing
-import subprocess
+import ctypes #Allows calling functions in compiled C code
+import multiprocessing #Multicore processing
+import subprocess #Shell commands
 import sys
 import time
-from abc import ABC, abstractmethod
 import os
-
 import psutil
+from abc import ABC, abstractmethod #Abstract classes
+
+#Imports quarchpy methods
 from quarchpy.device import get_quarch_device, quarchPPM
 from quarchpy.user_interface import visual_sleep
 
+#Import locally stored tools
 import syncUtils
 
 class UsingC(ABC):
+    """
+    UsingC is an abstract parent class. This contains parent methods that have small changes between windows and posix.
+    For any methods that change a lot - e.g. the compiler check, these are set within the child class.
+
+    The constructor and stream methods should be called in the main script
+
+    Methods:
+        __init__(self, pam_configs, stream_length, resample_rate):
+        compiler_check(self):
+        stream(self, connection_type):
+        compile_c_lib(self, C_CODE):
+        sync_and_trigger_stream(self, target_ns, pam_address, filename, stream_duration, resample_rate, so_file)
+        coordinate_multiproc_trigger(self, stream_length, pam_configs, connection_type, so_file)
+    """
     #Assigns constructor params to local params
     def __init__(self, pam_configs, stream_length: float, resample_rate: str):
         """
-        Constructor for abstract class UsingC. Cannot be directly called, but is called when child is called
+        Abstract class constructor. Cannot be directly called, but is called when child is called
+        :param pam_configs: The dictionary of PAM addresses and filenames
+        :param stream_length: The length of the stream to use in seconds
+        :param resample_rate: The rate at which to resample
         """
         self.so_file = None
         self.pam_configs = pam_configs
@@ -30,7 +49,7 @@ class UsingC(ABC):
         for pam in pam_configs:
             if pam["address"].split(":")[0] == "TCP":
                 self.ping_allowed = True
-                #Stores IP address as 1.1.1.1
+                #Stores IP address in the format 1.1.1.1
                 self.ip_address = pam["address"].split(":")[1]
                 #Adds to list of IP addresses
                 self.ip_addresses.append(self.ip_address)
@@ -44,6 +63,7 @@ class UsingC(ABC):
     def stream(self, connection_type):
         """
         This is called in the main script. This sets up the multiprocessing, and worker function
+        :param connection_type: Default QIS
         """
 
         print("Spinning up CPU...")
@@ -53,15 +73,7 @@ class UsingC(ABC):
             for ip_address in self.ip_addresses:
                 syncUtils.ping_device(ip_address)
 
-
-
         self.coordinate_multiproc_trigger(self.stream_length, self.pam_configs, connection_type, self.so_file)
-
-        """
-                    stream_duration: float,
-            pam_configs,
-            connection_type: str = "QIS",
-            so_file: str = "spin_core.dll"):"""
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
@@ -72,7 +84,6 @@ class UsingC(ABC):
             C_CODE: The C Code to be compiled - different whether Windows or Linux
 
         Returns: so_file - The compiled C code
-
         """
         # If Windows, look for a .dll (dynamic link library) - else, look for a .so Shared Object file
         suffix = ".dll" if os.name == "nt" else ".so"
@@ -118,12 +129,10 @@ class UsingC(ABC):
             target_ns: The time the system aims to execute at
             pam_address: The address of the PAM to be connected to - in the format "TCP:1.1.1.1"
             filename: The file to write to
-            so_file: The compiled C code
-            resample_rate: Rate at which to resample
             stream_duration: Stream length - how long to stream for
-            connection_type: Default QIS, but can be overwritten to QPS
-
-
+            resample_rate: Rate at which to resample
+            so_file: The compiled C code
+            connection_type: Default QIS
         Returns None:
         """
 
@@ -162,10 +171,8 @@ class UsingC(ABC):
         Args:
             stream_duration: Stream length
             pam_configs: List of PAMs connected and filenames
-            so_file: The compiled C code
             connection_type: Default QIS, but can be overwritten to QPS
-
-
+            so_file: The compiled C code
         Returns None:
         """
         if os.name == "nt":  # If windows correct for epoch differences
@@ -214,11 +221,16 @@ class UsingC(ABC):
             # Blocks the main script until both processes are done
             process.join()
 
-
-
 class CWindows(UsingC):
     def __init__(self, pam_configs, stream_length, resample_rate):
-        #Pass parameters to parents constructor
+        """
+        Constructor for the Windows class. Inherits from UsingC class.
+        Args:
+            pam_configs: List of PAMs connected and filenames
+            stream_length: Stream length - how long to stream for
+            resample_rate: Rate at which to resample
+        """
+        #Pass parameters to parent constructor
         super().__init__(pam_configs, stream_length, resample_rate)
 
         # C Code is different for Windows or POSIX
@@ -253,18 +265,14 @@ class CWindows(UsingC):
 
         self.ping_allowed = None
 
-
         #Compiles the C Script
         self.so_file = self.compile_c_lib(C_CODE)
-
-
 
     def compiler_check(self):
         """
         Checks if a C compiler is installed and added to the path of the system
         Provides instructions if not installed
         """
-
         try:
             check = subprocess.run(["where", "gcc"], capture_output=True, text=True)
             if check.returncode != 0:  # Not Found
@@ -281,6 +289,13 @@ class CWindows(UsingC):
 
 class CPosix(UsingC):
     def __init__(self, pam_configs, stream_length, resample_rate):
+        """
+        Constructor for the Posix class. Inherits from UsingC class.
+        Args:
+            pam_configs: List of PAMs connected and filenames
+            stream_length: Stream length - how long to stream for
+            resample_rate: Rate at which to resample
+        """
         super().__init__(pam_configs, stream_length, resample_rate)
 
         C_CODE = """

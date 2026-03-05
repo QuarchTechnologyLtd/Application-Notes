@@ -53,6 +53,7 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
     Used for user to view the CSVs as QPS Traces
 
     :parameter csv_file: The CSV to view
+    :parameter pam_address: The PAM to connect to
     :parameter qps_instance: QpsInterface - If QPS is already open, use that, otherwise a new instance will be launched
 
     Returns: None
@@ -70,16 +71,15 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
     print("Converting CSV file to QPS")
 
     command = f'$convert csv from="{csv_path}" to="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
+    qps_instance.sendCommand(command)
 
     print(f"Opening QPS Recording. Stored: {file_path}")
 
     command = f'$open recording qpsFile="{file_path}"'
-    response = qps_instance.sendCommand(command)
-    print(response)
+    qps_instance.sendCommand(command)
 
-def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int, shared_timestamp):
+
+def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_rate:str, stream_length: int):
     """
     Used in the simple version to spin up the CPU core, using python only, and then start stream when a time has passed
     :param pam_address: PAM - The IP address of the PAM to stream
@@ -109,7 +109,6 @@ def spin_cpu_simple(pam_address: str, filename: str, target_ns: int, resample_ra
             #Start stream
             pam.start_stream(filename, stream_duration=stream_length)
             #Exit loop
-            shared_timestamp.value = time.clock_gettime_ns(clock_id) if clock_id else time.time_ns()
             break
 
 def spin_cpu_and_start_stream(pam_1_address: str, pam_2_address: str, resample_rate: str, stream_length: int):

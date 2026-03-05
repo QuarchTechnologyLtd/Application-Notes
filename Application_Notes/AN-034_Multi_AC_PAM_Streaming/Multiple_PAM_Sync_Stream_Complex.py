@@ -1,6 +1,6 @@
 """AN-034
-This Application Note uses 2 Power Analysis Modules to stream synchronously, with the user choosing to stream
-over QIS or over QPS. Either option will export a CSV, which is then merged, and opened in QPS.
+This Application Note uses 2 Power Analysis Modules to stream synchronously, over QIS.
+This will export a CSV, which is then merged, and opened in QPS.
 
 If using AC PAMs, suggested application is a singular high power requirement source, where one AC PAM is not enough to capture all power.
 If using DC PAMs, suggested application is to measure the power used by different components of a single system. e.g. using a QTL2983 GPU PAM,
@@ -8,10 +8,14 @@ and a QTL3069 Gen6 EDSFF PAM, in the same system.
 
 To reduce latency from one stream starting to the next stream starting, this script uses a compiled C file to spin
 up 2 CPU cores, and keep them busy, until the start_stream command is called. This requires the use of a compiler -
-GCC recommended. The two streams from both PAMs should start relatively synchronously.
+GCC recommended. There is a check to not recompile, if the file is there
 
-In testing, the desync was typically less than 5ms worst case scenario, with most being less than 1ms between 1 stream starting and the
-next stream starting. This is likely related to network latency.
+In testing, when connected over IP the desync was typically less than 5ms worst case scenario, with most being less than 1ms
+between 1 stream starting and the next stream starting. This is likely related to network latency. USB is slower in testing
+
+If you are running multiple times, rename the CSVs and saved QPS file, otherwise the CSVs will be overwritten, and automatic QPS import will fail.
+In this script, there are various optional hardcodes - stream length, stream resample rate, number of pams, pam addresses, whether to display in QPS or not.
+If running multiple times, it is suggested to hardcode these to speed up the time in between tests.
 
 This AN-034 uses the quarchpy python package and demonstrates
 -Streaming from multiple instruments at the same time
@@ -20,9 +24,8 @@ This AN-034 uses the quarchpy python package and demonstrates
 -Automatically importing CSVs into QPS for comparison.
 
 ########### VERSION HISTORY ###########
-13/01/2026 - Andrew Steedman - Created
-16/01/2026 - Stuart Boon - Multi-threading
-24/02/2026 - Andrew Steedman - Separated simpler and complex versions
+24/02/2026 - Stuart Boon - Multi-threading
+05/03/2026 - Andrew Steedman - Separated simpler and complex versions
 
 ########### REQUIREMENTS ##############
 
@@ -31,19 +34,19 @@ This AN-034 uses the quarchpy python package and demonstrates
 2 - Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
 3 - GCC (GNU Compiler Collection) - See README.md
-5- A multicore processor (2 minimum)
+5- A multicore processor (minimum 2 - 1 per PAM used)
 
 ########### INSTRUCTIONS ##############
 
-1 - Connect AC PAMs to the same LAN as control PC
-2 - Connect AC PAMs to power
-3 - Change the global variables: PAM_1_ADDRESS, PAM_2_ADDRESS, STREAM_LENGTH
-4 - Run the script with admin permissions
+1 - Connect PAMs to the same LAN as control PC
+2 - Connect PAMs to power
+3 - Run the script with admin permissions
 """
 #Local files
 import syncUtils
 import syncComplexClasses
 
+#Quarchpy files
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
 from quarchpy.debug.versionCompare import requiredQuarchpyVersion
@@ -53,29 +56,8 @@ from quarchpy.device import *
 from quarchpy.user_interface import *
 from quarchpy.connection_specific import *
 
-#Included in default installation
 import time
 import os
-
-#USER TO CHANGE - Constants, Should be static while program is running
-# Hardcoded PAM Addresses - used if 2 pams are used
-PAM_1_ADDRESS = "USB:QTL2312-01-477"
-PAM_2_ADDRESS = "USB:QTL2312-01-035"
-
-#Stream length in seconds - QIS call takes float parameter
-STREAM_LENGTH = float(20)
-
-#The rate at which to resample the stream - DC PAMs minimum is 4us, AC PAMs is 250us
-STREAM_RESAMPLE_RATE = "1ms"
-#/USER TO CHANGE/
-
-#All in Current Working Directory
-#Filename of the CSV output from PAM1
-FILE_NAME_PAM_1 = "RawDataPam1.csv"
-
-#Filename of the CSV output from PAM2
-FILE_NAME_PAM_2 = "RawDataPam2.csv"
-
 
 
 def main():
@@ -86,226 +68,178 @@ def main():
     #quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
-    print("*****************************************")
-    print("*****************************************\n")
-    print("AN-034 - Multiple PAM Synchronous Stream")
-    print("Connect the devices over IP on the same network")
-    print("\n*****************************************")
-    print("*****************************************")
+    displayTable(["AN-034 - Multiple PAM Synchronous Stream Complex\n","Connect the devices over IP on the same network"], printToConsole=True, align="c")
 
     #Requires features added in 2.2.17
     requiredQuarchpyVersion("2.2.17")
 
-    #e.g. Standard DC PAMs (QTL2312)
-    #Asks if user is using a triggering cable
-    print("Are you using PAMs connected by a triggering cable?")
-    hardware_trigger = showYesNoDialog(title="Triggering cable?", message="Yes for triggering cable, no for software trigger")
+    connection_type = "QIS"
 
-    #Optional hardcode - uncomment either line to hardcode it
-    #hardware_trigger = "Yes"
-    #hardware_trigger = "No"
+    # Start QIS if not running
+    if not isQisRunning():
+        # myQis is the QIS Interface
+        myQis = startLocalQis()
+        keep_qis_running = False
 
-    if hardware_trigger == "Yes": #Using triggering cable
-        #Asks user QIS or QPS
-        optionList = "QIS,QPS"
-        connection_type = user_interface.listSelection(title="QIS or QPS", message="Select QIS or QPS",selectionList=optionList, nice=True)
+    else:
+        # Connect to the open instance of QIS
+        myQis = QisInterface()
+        keep_qis_running = True
 
-        #Optional hardcode - uncomment either line to hardcode it and comment in line above
-        #connection_type = "QIS"
-        #connection_type = "QPS"
 
-        #If using QIS, call the setup function - response is different based on QIS or QPS
-        if connection_type == "QIS":
-            pam1, pam2, qis = launch_and_setup(connection_type)
+    #Start of parameter selection - optional hardcodes are commented in
+    #User selects stream length
+    print("Please input the stream length in seconds. Leave blank for default of 60 seconds")
+    # Takes user input
+    stream_length_input = str(input("Please enter stream length in seconds: "))
+    # Checks if blank
+    if stream_length_input == "":
+        # Sets to 60 seconds if left blank
+        stream_length = float(60)
+    else: #Some value has been entered
+        try: #If stream_length_input is not a number, will fail
+            if int(stream_length_input) > 0:
+                # Otherwise, take the users input
+                stream_length = float(stream_length_input)
+            else:
+                # Value entered is either 0, or negative
+                print("Value entered is invalid - Using default of 60 seconds")
+                # Uses default length
+                stream_length = float(60)
+        except ValueError: #Catches the error
+            print("Value entered is invalid - Using default of 60 seconds")
+            stream_length = float(60)
+    print(f"Stream length selected is: {stream_length} seconds")
 
-        else: #QPS
-            pam1, pam2, qps1, qps2 = launch_and_setup(connection_type)
+    #Optional Hardcode - comment in lines above, uncomment this
+    #stream_length = float(60)
 
-        #Gets the serial number in the format XXXX-XX-XXX
-        pam_1_name = "QTL" + pam1.sendCommand("*enclosure?")
-        pam_2_name = "QTL" + pam2.sendCommand("*enclosure?")
+    #Sets Resample Rate
+    #If both are DC PAMs, allow up to 4us sampling
+    ac_pam = showYesNoDialog(title="PAM type?", message="Is at least 1 of the PAMs an AC PAM?")
+    if ac_pam == "No":
+        # Has higher resolution sampling available
+        resample_rate_list = "4us,16us,100us,1ms,4ms,16ms,100ms,1s"
 
-        # Upgrades PAM to quarchPPM class
-        pam_1_power_device = quarchPPM(pam1)
-        pam_2_power_device = quarchPPM(pam2)
+    # If at least one is not a DC PAM, allow up to 250us sampling - we want all PAMs to stream at the same resample rate
+    else:
+        resample_rate_list = "250us,1ms,4ms,16ms,100ms,1s"
 
-        #Resamples the PAMs so they are sampling at the same rate
-        pam_1_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
-        pam_2_power_device.send_command(f"stream mode resample {STREAM_RESAMPLE_RATE}")
+    # Takes the user input
+    resample_rate = listSelection(title="Select resample rate", message="Select resample rate",
+                                  selectionList=resample_rate_list, nice=True)
 
-        #Gives instructions of how to connect the PAM triggers
-        print(f"Connect PAM 1 {pam_1_name} trigger out, to PAM 2 {pam_2_name} trigger in\n")
-        showDialog(title="Select yes, when setup", message=f"Is it setup in this way?")
+    #Optional Hardcode - comment in lines above, uncomment this
+    #resample_rate = "1ms"
 
-        print("\nConfiguring Trigger...\n")
+    print("How many PAMs are you using?")
+    #Quit is an option to match up indexing - 2 pams enter 2, 4 pams enter 4
+    optionList = "Quit,2,3,4,5"
+    #Takes user input
+    pam_count = user_interface.listSelection(title="Select PAM", message="How many PAMs?",selectionList=optionList, nice=True)
+    if pam_count == "Quit":
+        exit(0)
 
-        #Configure recording trigger on PAM2
-        pam_2_power_device.send_command("RECord:RUN")
-        pam_2_power_device.send_command("RECord:TRIGger:MODE EXTernal")
+    #Optional hardcode - uncomment this and comment in lines above
+    #pam_count = "2"
 
-        #Gives time for it to be setup
-        time.sleep(1)
+    #Dictionary of PAM addresses and their file names
+    pam_configs = []
+    #For each PAM, append pam_configs
+    for i in range(int(pam_count)):
+        #Gets module list, with additional options
+        selected_pam = myQis.get_qis_module_selection(additional_options=["Rescan", "All Con Types", "Ip Scan", "Quit"])
 
-        #Configure trigger out on pam 1
-        pam_1_power_device.send_command("TRIGger:OUT:MODE RECORD")
+        if selected_pam == "Quit":
+            exit(0)
 
-        #Setups stream on PAM2, with the target CSV - waits on trigger
-        pam_2_power_device.start_stream("RawDataPam2.csv")
+        #Add the PAM address, and filename to pam_configs
+        pam_configs.append({
+            "address": selected_pam,
+            "filename": f"RawDataPam{i+1}.csv"
+        })
 
-        # Gives time for it to be setup
-        time.sleep(1)
+    #Uncomment this if wanting to hardcode, and comment in section above
+    #pam_configs = [{"address": "USB:QTL2312-01-477", "filename": "RawDataPam1.csv"},
+    #               {"address": "USB:QTL2312-01-035", "filename": "RawDataPam2.csv"},
+    #               {"address": "TCP:10.0.8.95",      "filename": "RawDataPam3.csv"},
+    #               {"address": "USB:QTL2312-01-001", "filename": "RawDataPam4.csv"},
+    #               {"address": "TCP:10.0.8.95",      "filename": "RawDataPam5.csv"}]
+    #END of stream parameter configuration
 
-        print("Streaming...")
+    #If Windows
+    if os.name == "nt":
+        #Creates the object
+        syncStreamObj = syncComplexClasses.CWindows(pam_configs, stream_length, resample_rate)
 
-        #Starts stream on both devices
-        pam_1_power_device.start_stream("RawDataPam1.csv", stream_duration=STREAM_LENGTH)
+    #If Linux
+    elif os.name == "posix":
+        #Creates the object
+        syncStreamObj = syncComplexClasses.CPosix(pam_configs, stream_length, resample_rate)
 
-        #Waits stream_length
-        time.sleep(STREAM_LENGTH)
+    #If not Windows or Linux, state unsupported
+    else:
+        print("OS not currently supported. Please use a Windows or POSIX system")
+        raise OSError("Unsupported operating system")
 
-        #Stop PAM2 after Stream Length - trigger only syncs the start
-        pam_2_power_device.send_command("RECord:STOP")
-
-        time.sleep(2)
-        #Closes the connection 2 seconds after stream ended
-        pam_2_power_device.close_connection()
-
-    else: #Using software trigger (e.g. AC PAMs - both 3 phase and IEC PAMs)
-        #Asking user if QIS or QPS
-        optionList = "QIS,QPS"
-        connection_type = user_interface.listSelection(title="QIS or QPS", message="Select QIS or QPS",selectionList=optionList, nice=True)
-
-        #Optional hardcode, uncomment either line and comment in line above
-        #connection_type = "QIS"
-        #connection_type = "QPS"
-
-        #If user wants to use 3,4,5 PAMs require QIS
-        if connection_type == "QIS":
-            myQis = startLocalQis()
-
-            print("How many PAMs are you using?")
-            #Quit is an option to match up indexing - 2 pams enter 2, 4 pams enter 4
-            optionList = "Quit,2,3,4,5"
-            pam_count = user_interface.listSelection(title="Select PAM", message="How many PAMs?",
-                                                     selectionList=optionList, nice=True)
-            if pam_count == "Quit":
-                exit(0)
-
-            #User selects how many PAMs
-            pam_configs = []
-            for i in range(int(pam_count)):
-                selected_pam = myQis.get_qis_module_selection(additional_options=["Rescan", "All Con Types", "Ip Scan", "Quit"])
-
-                if selected_pam == "Quit":
-                    exit(0)
-
-                pam_configs.append({
-                    "address": selected_pam,
-                    "filename": f"RawDataPam{i+1}.csv"
-                })
-
-            #Uncomment this if wanting to hardcode, and comment in section above
-            #pam_configs = [{"address": "USB:QTL2312-01-477", "filename": "RawDataPam1.csv"},
-            #               {"address": "USB:QTL2312-01-035", "filename": "RawDataPam2.csv"},
-            #               {"address": "TCP:10.0.8.95", "filename": "RawDataPam3.csv"},
-            #               {"address": "USB:QTL2312-01-001", "filename": "RawDataPam4.csv"},
-            #               {"address": "TCP:10.0.8.95", "filename": "RawDataPam5.csv"}]
-
-        else: #QPS
-            pam_configs = [{"address": PAM_1_ADDRESS, "filename": "RawDataPam1.csv"},
-                           {"address": PAM_2_ADDRESS, "filename": "RawDataPam2.csv"}]
-
-        #Similar to switch case in other languages - reduces indents and easier to read
-        match (connection_type, os.name):
-            case ("QIS", "nt"): #QIS, Windows, C
-                startLocalQis()
-                syncStreamObj = syncComplexClasses.CWindows(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
-
-            case ("QIS", "posix"): #QIS, POSIX, C
-                startLocalQis()
-                syncStreamObj = syncComplexClasses.CPosix(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
-
-            case ("QPS", "nt"): #QPS, Windows, C
-                #TODO Start QPS
-                syncStreamObj = syncComplexClasses.CWindows(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
-
-            case ("QPS", "posix"): #QPS, POSIX, C
-                #TODO Start QPS
-                syncStreamObj = syncComplexClasses.CPosix(pam_configs, STREAM_LENGTH, STREAM_RESAMPLE_RATE)
-
-            case _: #Catchall - OS is the only one that isn't binary - i.e. qis or qps, c or python
-                print("OS not currently supported. Please use a Windows or POSIX system")
-                raise OSError("Unsupported operating system")
-
-        syncStreamObj.stream(connection_type)
+    #Start the stream
+    syncStreamObj.stream(connection_type)
 
     print("Stream completed\n")
     print("Combining CSV files...")
 
-    #Merges the CSVs with a shared time column, adds prefix to other columns in 1_ and 2_
-    file_list = [pam["filename"] for pam in pam_configs]
-    combined_csv = syncUtils.csv_combiner(file_list)
+    #Creates a filelist of the file names
+    filelist = [pam["filename"] for pam in pam_configs]
 
-    #PLACEHOLDER
-    print("Opening QPS and reconnecting to a PAM to view the traces\n...\n")
+    #Combine the CSVs with a shared time column
+    combined_csv_path = syncUtils.csv_combiner(filelist)
+    print(f"Combined CSV file can be found : {combined_csv_path}")
 
-    #Opens QPS, ready for user to manually import CSV
-    if connection_type == "QPS":
-        #Passes in the already open instance of QPS used for PAM 1
-        syncUtils.view_csv_in_qps(qps1, combined_csv)
-        #Close the 2nd QPS instance
-        closeQps(port=9823)
+    #Stream is complete
+    #Asks user if they want to combine data and display it in QPS
+    display_in_qps = showYesNoDialog(title="Post-process?", message="Do you want to display the data in QPS?")
 
-    else: #If QIS was used, open a QPS instance
-        syncUtils.view_csv_in_qps(combined_csv, PAM_1_ADDRESS)
+    #Optional Hardcode - uncomment one of these lines, comment in line above
+    #display_in_qps = "Yes"
+    #display_in_qps = "No"
 
-    print("PAM1 traces are prefixed with 1_, PAM2 traces are prefixed with 2_, and so on")
-    print("If running again, rename the QPS recording, and CSV")
+    if display_in_qps == "Yes":
+        #QPS will connect to PAM 1
+        pam_address = pam_configs[0]["address"]
+        #And then convert and open in QPS
+        syncUtils.view_csv_in_qps(combined_csv_path, pam_address)
 
-    sys.exit(0)
+        #Iterates over PAM_Configs, from PAM 2 onwards
+        for pam in pam_configs[1:]:
+            # Gets address of the PAMs
+            address = pam["address"]
 
+            # Closes connection to PAMs
+            myQis.send_command(f"close {address}")
 
-def launch_and_setup(connection_type):
-    if connection_type == "QPS":
-        # QPS instance 1 is easy - use default ports
-        qps1 = startLocalQps(startQPSMinimised=False)
+    #If no, exit the script, provide filepath to the CSVs
+    if display_in_qps == "No":
+        #For each PAM, display the filepath, close the connection
+        for pam in pam_configs:
+            #Gets absolute path of the stream CSVs
+            address = pam["address"]
+            file = pam["filename"]
+            path = os.path.abspath(file)
 
-        # Connects 1st pam device to the same QIS Instance - timeout of 20s timeout=str(20)
-        pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type, qps_instance=qps1)
+            #Display the absolute path of the stream CSVs
+            print(f"PAM {pam} stream data can be found: {path}")
 
-        pam_1_qps = quarchQPS(pam1)
+            #Closes connection to PAMs
+            myQis.send_command(f"close {address}")
 
-        pam_1_qps.openConnection()
+        #If QIS was already open, leave running.
+        if not keep_qis_running:
+            #Closes connection to QIS
+            myQis.close_connection()
 
-        #Create separate QIS backend
-        #startLocalQis(port=9723,rest_port=9781)
-        #Creates separate QPS launch, connected to second QIS instance
-        qps2 = startLocalQps(startQPSMinimised=False,port=9823, qis_port=9723, qis_rest_port=9781)
+        print("Exiting...")
 
-        #Connects the 2nd PAM to the 2nd QIS
-        pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type, qps_instance=qps2)
-
-        pam_2_qps = quarchQPS(pam2)
-
-        pam_2_qps.openConnection()
-
-        #Returns the pams, and qps objects
-        return pam_1_qps, pam_2_qps, qps1, qps2
-
-    else:  # QIS
-        # If QIS is not already running
-        if isQisRunning():
-            qis = QisInterface()
-        else:
-            # Start Local QIS Instance
-            print("Starting QIS...")
-            qis = startLocalQis()
-
-        # Connects 1st pam device to the same QIS Instance
-        pam1 = get_quarch_device(connectionTarget=PAM_1_ADDRESS, ConType=connection_type)
-
-        pam2 = get_quarch_device(connectionTarget=PAM_2_ADDRESS, ConType=connection_type)
-        return pam1, pam2, qis
+        exit(0)
 
 
 if __name__ == "__main__":
