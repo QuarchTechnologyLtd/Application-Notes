@@ -19,13 +19,11 @@ QIS is distributed as part of the Quarchpy python package and does not require s
 
 1- Python (3.x recommended)
     https://www.python.org/downloads/
-2- Java 8, with JaxaFX
-    https://quarch.com/support/faqs/java/
-3- Quarchpy python package
+2- Quarchpy python package
     https://quarch.com/products/quarchpy-python-package/
-4- Quarch USB driver (Required for USB connected devices on windows only)
+3- Quarch USB driver (Required for USB connected devices on windows only)
     https://quarch.com/downloads/driver/
-5- Check USB permissions if using Linux:
+4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
 
 ########### INSTRUCTIONS ###########
