@@ -22,8 +22,6 @@ This example demonstrates adding annotations and data points to a QPS stream.
     https://quarch.com/downloads/driver/
 4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
-5- Java 8, with JaxaFX
-    https://quarch.com/support/faqs/java/
 
 ########### INSTRUCTIONS ###########
 
