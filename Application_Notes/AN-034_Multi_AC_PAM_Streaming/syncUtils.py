@@ -72,7 +72,7 @@ def view_csv_in_qps(csv_path:str, pam_address:str, qps_instance: QpsInterface = 
 
     #Get the current working directory, create new folder and target recording
     #If this folder exists already, will fail
-    file_path = os.getcwd() + rf"\sync_stream\sync_stream.qps"
+    file_path = os.path.join(os.getcwd(), os.path.join("sync_stream", "sync_stream.qps"))
 
     print("Converting CSV file to QPS")
 

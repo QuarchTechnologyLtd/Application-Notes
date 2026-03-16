@@ -47,8 +47,6 @@ from quarchpy.qps import startLocalQps
 from quarchpy.user_interface import showYesNoDialog, showDialog, visual_sleep, listSelection, displayTable
 import syncUtils
 
-#Length of stream in seconds
-
 
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
@@ -58,7 +56,7 @@ def main():
     # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
-    displayTable(["AN-034 - Multiple PAM Synchronous Stream Simple\n","Connect the devices to the same host PC"],printToConsole=True, align="c")
+    displayTable(["AN-034 - Multiple PAM Synchronous Stream Simple","Connect the devices to the same host PC"],printToConsole=True, align="c")
 
     print("Please input the stream length in seconds. Leave blank for default of 60 seconds")
     # Takes user input
