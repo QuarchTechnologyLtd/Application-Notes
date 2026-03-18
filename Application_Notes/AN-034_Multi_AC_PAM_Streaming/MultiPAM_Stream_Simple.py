@@ -51,6 +51,7 @@ import syncUtils
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+    #import logging
     #logging.basicConfig(level=logging.DEBUG)
     # # To control specifically the quarchpy console log level use the following line:
     # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
