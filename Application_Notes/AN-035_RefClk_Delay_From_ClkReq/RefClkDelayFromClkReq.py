@@ -1,32 +1,29 @@
 """
-This application note is to demonstrate RefClk coming active after ClkReq has come active. This using a triggering breaker
-with a loopback connection, and a PAM to verify what is happening. It is suggested to use the AIC form factor, as this references the
-CEM Spec directly.
+This application note is to demonstrate RefClk coming active after ClkReq# has been asserted. This using a triggering breaker
+with a loopback connection, and a PAM to verify what is happening.
 
-It is recommended to have a separate host and control PC, so the control PC can record while the host PC boots. This script can be used
-without a PAM, and just used to configure the breaker to delay the refclk. If this is desired, comment out PAM sections.
+This script will setup the breaker to trigger out from ClKReq#, and 100ms after triggering, close the RefClk switches. It is best suited
+to use seperate host and control PCs, so that ClkReq# can be driven at startup.
 
 This configures the breaker to have ClkReq as trigger out, and trigger in as the action to power up from, so the module triggers from
-ClkReq. This script is aimed towards the Gen6 AIC Breakers, and as such the signal names may change.
-
+ClkReq. This script is best suited to a system that can drive ClkReq#, a breaker that can break ClkReq# and a PAM that can measure RefClk.
 This was written using a QTL3238 Gen6 x16-0 AIC Breaker, and a QTL3216 Gen6 AIC PAM. As such, the signal names are written for these,
 so minor variations might be needed to work with other modules
 
 Section 2.10 of the PCI Express Card Electromechanical Specification. Revision 6 summarises to:
+ClkReq# is an optional, active low signal driven low by the add-in card to request RefClk.
 
-ClkReq# is an optional, open drain, active low signal driven low by the add-in card to request RefClk.
-CLKREQ# is driven low by the card to request the reference clock
 Here we are delaying CLKREQ#, and verifying that the device still functions
 
+PCIe Spec
+Table 7-97
+T_POWER_ON = Value * Scale, sets the minimum amount of time (in μs) that the Port must wait in L1.2.Exit after sampling
+CLKREQ# asserted before actively driving the interface.
+
+T_POWER_ON = Value * Scale
+T_POWER_ON = 10us (default)
+
 This script will set a delay of 100ms on the RefClk, and keep all other signals as their default delays
-
-For testing purposes, we are using a test fixture to drive individual GPIO pins
-
-we will drive ClkReq, and will use PAM
-
-Clock generator pin is GPIO 88
-ClkReq pin is B12 GPIO 216
-
 
 """
 
@@ -50,7 +47,10 @@ def main():
     #Displays the title as a list
     displayTable("AN-035 Delay RefClk from CLKREQ#", printToConsole=True, align="c")
 
-    requiredQuarchpyVersion("2.2.18")
+    requiredQuarchpyVersion("2.2.17")
+
+    #Provides instructions about how to setup the module
+    showDialog(title="", message="Connect the breaker trigger out, to the breaker trigger in with an MCX loopback cable")
 
     print("Connecting to Breaker...")
 
@@ -73,6 +73,7 @@ def main():
     print("Breaker Name:")
     print(breaker.send_command("hello?"))
 
+    print("When the stream is running, power up the host system\n")
 
     #PAM Connection
     #Start QPS if not already running
@@ -96,28 +97,26 @@ def main():
     #Upgrade Quarch Device to QPS Device
     pam = quarchQPS(my_quarch_device)
 
-    #Opens connection
+    #Opens connection to PAM
     pam.open_connection()
-
 
     #Sets breaker to default state
     breaker.send_command("CONFig:DEFault STATE")
 
+    #Powers down the breaker
     breaker.send_command("RUN:POWer DOWN")
-
-    #Provides instructions about how to setup the module
-    #showDialog(title="", message="Connect the breaker trigger out, to the breaker trigger in with a loopback cable")
-
-    print("When the stream is running, power up the host system")
 
     #Set Trigger out to sideband monitor
     breaker.send_command("TRIGger:OUT:MODE:SIDEband")
 
-    #Sets CLKREQ to sideband monitor - CLKREQ is now being outputted over trigger out
+    #Sets CLKREQ# to sideband monitor - CLKREQ# is now being outputted over trigger out
     breaker.send_command("TRIGger:MONitor OUT:CLKREQ:DEVICE")
 
-    #When trigger in received (CLKREQ changing), hot plug will be performed, and 100ms later refclk will be connected
+    #When trigger in received (CLKREQ# changing), hot plug will be performed, and 100ms later refclk will be connected
     breaker.send_command("TRIGger:IN:MODE:POWER")
+
+    #CLKREQ# is active low so we invert it
+    breaker.send_command("TRIG:IN:INVERT ON")
 
     #Configure RefClk delay to 100ms
     #Source 4 is unused by default
@@ -143,12 +142,15 @@ def main():
     pam.start_stream(directory=(stream_path + "\\" + file_name), stream_duration="60")
 
     #Streams for 60 seconds, enough for a power up or power down on most systems
-    visual_sleep(20)
+    visual_sleep(60)
 
 
-    print("Stream Completed")
+    print("\nStream Completed")
 
     print(f"\nRecording saved to {stream_path}\\{file_name}")
+
+    print("\nTo verify compliance with the PCIe specification, review the Quarch Power Studio trace. ")
+    print("In particular, when ClkReq# is asserted (power up or otherwise), ensure RefClk comes up 100ms later")
 
     print("\nRelevant sections of the PCIe CEM Spec Rev6")
     print("Section 2.1 - Reference Clock")
@@ -156,9 +158,7 @@ def main():
     print("Section 2.10 - CLKREQ# Signal (Optional)")
 
 
-    print("Look for the power up event in the QPS trace")
-    print("In particular, look for CLKREQ# changing, and 100ms later REFCLK0_LOS changing")
-    print("If your device functions after this delay")
+
 
     return 0
 
