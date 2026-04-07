@@ -64,7 +64,6 @@ from quarchpy.device import scanDevices, userSelectDevice, get_quarch_device, qu
 from quarchpy.qps import isQpsRunning, startLocalQps, GetQpsModuleSelection
 from quarchpy.user_interface import *
 
-import re
 
 stream_path = os.path.join(os.getcwd(), "QPS_Traces")
 
