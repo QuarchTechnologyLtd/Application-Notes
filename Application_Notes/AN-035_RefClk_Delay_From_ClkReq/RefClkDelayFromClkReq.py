@@ -64,6 +64,8 @@ from quarchpy.device import scanDevices, userSelectDevice, get_quarch_device, qu
 from quarchpy.qps import isQpsRunning, startLocalQps, GetQpsModuleSelection
 from quarchpy.user_interface import *
 
+import re
+
 stream_path = os.path.join(os.getcwd(), "QPS_Traces")
 
 def main():
@@ -78,19 +80,26 @@ def main():
     displayTable("AN-035 Delay RefClk from CLKREQ#", printToConsole=True, align="c")
 
     print("While the stream is running, CLKREQ# should be asserted. This could be power up, or exiting a sleep state")
+    print("This stream will run for 60 seconds")
 
     #Checks that the customer is on a relatively recent version of Quarchpy
     requiredQuarchpyVersion("2.2.19")
 
-    print("It is suggested for a first test to use 100ms delay. Please select the delay")
+    print("It is suggested for a first test to use 100ms delay. Please select the delay in millseconds")
     #This is a list of delays that the user can select
-    delay_list = "1ms,10ms,50ms,100ms,500ms,1000ms"
+    delay_list = "1,10,50,100,500,1000"
 
     #User selects the delays, shown in a table
-    delay_selected = listSelection(title="", message="Select the delay between CLKREQ# and RefClk", selectionList=delay_list, nice=True)
+    delay_selected = listSelection(title="", message="Select the delay between CLKREQ# and RefClk - in milliseconds", selectionList=delay_list, nice=True)
 
-    #Optional Hardcode - uncomment this, and comment in the line above if you want to hardcode the delay
-    #delay_selected = "100ms"
+    #Most pins will have a 25ms delay so we will add 25ms onto the delay the user selects
+    delay = str(int(delay_selected) + 25)
+
+    #Adds the ms suffix to the delay - e.g. if 100 is selected, delay will be 125ms
+    delay = delay + "ms"
+
+    #Optional Hardcode - uncomment this, and comment in the lines above if you want to hardcode the delay
+    #delay_selected = "125ms"
 
     #We need to sample faster than the delay, so at 1ms or 10ms delay we will use a 100us resample rate
     if delay_selected == "1ms" or delay_selected == "10ms":
@@ -168,8 +177,8 @@ def main():
     #CLKREQ# is active low so we invert the triggering logic
     breaker.send_command("TRIG:IN:INVERT ON")
 
-    #Source 4 is unused by default, so we will use that
-    breaker.send_command(f"SOURce:4:DELAY {delay_selected}")
+    #Source 4 is unused by default, so we will use that for RefClk
+    breaker.send_command(f"SOURce:4:DELAY {delay}")
 
     #Assign signal group RefClk to Source 4 with our assigned delay
     breaker.send_command("SIGnal:REFCLK:SOURce 4")
@@ -199,9 +208,8 @@ def main():
     print(f"\nRecording saved to {stream_path}\\{file_name}")
 
     print("\nTo verify compliance with the PCIe specification, review the Quarch Power Studio trace. ")
-    print("The PCIe specification does not provide a maximum time between CLKREQ# assertion and RefClk becoming valid, leaving it to the device to specify this")
-    print("There is a range of delays to set between CLKREQ# assertion and RefClk being valid. This is likely greater than most device implemented maximums.")
-    print("It is suggested to repeat this test, and adjust the delays.\n")
+    print("The PCIe specification does not provide a maximum time between CLKREQ# assertion and RefClk becoming valid, leaving it to the device to specify this\n")
+
 
     print("PCIe Base Specification Revision 6.3:\n")
 
@@ -215,6 +223,9 @@ def main():
     print("Section 6.18 Latency Tolerance Reporting (LTR Mechanism) is set by the endpoint (device) to report their latency requirement to the root complex.")
     print("This is optional, and does not have a default.")
     print("This states that if a latency requirement is set by the device, this is in the range of1 nanosecond to 34.3 seconds.\n")
+
+    print("There is a range of delays to set between CLKREQ# assertion and RefClk being valid. This is likely greater than most device implemented maximums.")
+    print("It is suggested to repeat this test, and adjust the delays.\n")
     return 0
 
 if __name__ == "__main__":
