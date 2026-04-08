@@ -51,7 +51,6 @@ import syncUtils
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
     # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
-    #import logging
     #logging.basicConfig(level=logging.DEBUG)
     # # To control specifically the quarchpy console log level use the following line:
     # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
@@ -63,8 +62,9 @@ def main():
     # Takes user input
     stream_length_input = str(input("Please enter stream length in seconds: "))
 
-    #Commented in to hardcode length of 60 seconds
+    #Optional hardcode - uncomment this and comment in the line above to hardcode the stream length - change line 71 to change the stream length
     #stream_length_input = ""
+
     # Checks if blank
     if stream_length_input == "":
         # Sets to 60 seconds if left blank
@@ -86,7 +86,7 @@ def main():
 
     print(f"Stream length selected is: {stream_length} seconds")
 
-    #If QIS is not already running
+    #If QIS is not already running, start QIS
     if not isQisRunning():
         print("Starting QIS...")
         #Start QIS, with myQis being the interface
@@ -98,8 +98,6 @@ def main():
         myQis = QisInterface()
         #If QIS is already running, keep it running after we are finished
         keep_qis_running = True
-
-    #Comment in this section to line 119, and uncomment line 124,125 to hardcode PAM addresses
 
     # The return from the module selection is a device ID string that we can use to connect to.
     # If you know the name of the module you would like to talk to, then you can skip module selection and
@@ -123,22 +121,31 @@ def main():
     #The return from the module selection is a device ID string that we can use to connect to.
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address
-    #my_pam_1 = "TCP:10.250.36.200"
+    #my_pam_1 = "TCP:10.0.8.3"
     #my_pam_2 = "USB:QTL2312-01-477"
 
-    #Connect to the PAMs as quarchDevices
+    #Connect to both modules
+    print('\nConnecting to ' + my_pam_1 + '...')
     my_pam_1_device = get_quarch_device(my_pam_1, ConType="QIS")
+
+    print('Connecting to ' + my_pam_2 + '...\n')
     my_pam_2_device = get_quarch_device(my_pam_2, ConType="QIS")
+
+    pam_1 = my_pam_1_device.send_command('hello?')
+    pam_2 = my_pam_2_device.send_command('hello?')
+
+    print("PAM 1 is: " + pam_1)
+    print("PAM 2 is: " + pam_2 + "\n")
 
     #This is done after the PAM connection, so we can check if AC PAMs, which have a max rate of 250us
     print("Default resample rate is 1ms.")
     #Asks the user if they want to change the resample rate
     select_resample = showYesNoDialog(title="Select resample rate", message="Do you want to change resample rate?")
-    #If yes, display a list with valid options
 
-    #This is an optional hardcode to remove the question about changing the resample rate. Uncomment this, comment in line above to hardcode this
+    #Optional Hardcode - Uncomment this and comment in line above to set the resample rate as a constant - default is 1ms, change on line 171
     #select_resample = "No"
 
+    # If yes, display a list with valid options
     if select_resample == "Yes":
         #*enclosure? returns the format 2312-01-001, 2582-01-001 etc
         pam_1_name = my_pam_1_device.send_command("*enclosure?")
@@ -177,7 +184,7 @@ def main():
     #Asks the user if they are using a hardware trigger
     hardware_trigger = showYesNoDialog(title="Are you using a triggering cable between the PAMs?", message="Are using a triggering cable between the PAMs?")
 
-    #Optional hardcode - To set whether using a trigger or not, uncomment this, comment in line above
+    #Optional Hardcode - Uncomment this and comment in line above - suggested to hardcode this for AC PAMs
     #hardware_trigger = "No"
 
     if hardware_trigger == "Yes":
@@ -217,7 +224,7 @@ def main():
 
         print("Stream completed")
 
-    else: #Use a software trigger
+    else: #Use a software
         print("Streaming...")
 
         #Simplest option - start them sequentially
@@ -229,7 +236,7 @@ def main():
 
         #This is a quicker way of starting the stream - Uses 2 CPU cores, that are kept busy, and the
         #pam command to start streaming is waiting to jump in - quicker but more complex
-        #Uncomment this, and comment in the 3 lines above if wanting to use
+        #Uncomment this, and comment in the 4 lines above if wanting to use
 
         #syncUtils.spin_cpu_and_start_stream(my_pam_1, my_pam_2, resample_rate, stream_length)
 
@@ -237,7 +244,7 @@ def main():
     #Asks user if they want to combine data and display it in QPS
     post_process = showYesNoDialog(title="Post-process?", message="Do you want to combine and display the data in QPS?")
 
-    #Optional Hardcode - Uncomment this, comment in line above to set whether the recording is always displayed in QPS
+    #Optional Hardcode - uncomment this and comment in the line above to hardcode opening
     #post_process = "Yes"
 
     #If no, exit the script
@@ -260,6 +267,8 @@ def main():
         if not keep_qis_running:
             #Closes connection to QIS
             myQis.close_connection()
+        else:
+            closeQis()
 
         print("Exiting...")
 
