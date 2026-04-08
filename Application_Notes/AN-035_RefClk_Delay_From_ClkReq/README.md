@@ -2,7 +2,7 @@
 
 ## Overview
 This Application Note uses a breaker to delay RefClk from CLKREQ#, and a PAM to verify that this is happening correctly.
-This requires a triggering breaker, and a loopback cable as we output CLKREQ#, and setup the trigger in to start a power up event.
+This requires a triggering breaker, and a loopback cable as we output CLKREQ#, and set up the trigger in to start a power up event.
 The delay is set by the user, ranging from 1ms to 1 second. 
 
 This app note was created using a QTL3238 Gen6 x16-0 AIC Breaker, and a QTL3216 Gen6 AIC PAM. As such, the signal names in this script are set for these.
@@ -16,7 +16,6 @@ This AN-035 uses the quarchpy python package and demonstrates
 -Connections to a breaker and a PAM
 -Setup of a triggering breaker
 -Setup of a PAM stream over QPS
-
 
 ## Requirements
 ### Hardware
@@ -46,4 +45,3 @@ This AN-035 uses the quarchpy python package and demonstrates
 ## License
 This project is provided under the terms specified at:
 [Quarch Legal](https://quarch.com/legal/)
-
