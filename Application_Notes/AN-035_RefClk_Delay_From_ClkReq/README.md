@@ -10,6 +10,8 @@ To use with different modules, this may need different names set. The command _h
 The PAM needs to be able to measure RefClk - most Gen6 modules are able to measure this.
 
 This is intended to help verify compliance with the PCIe spec - the relevant sections of the spec are displayed in the terminal at the end of the script.
+The CEM spec states that CLKREQ# is an optional, active low signal, driven by the card.
+The device used in this test must be able to drive CLKREQ#.
 
 ## Features
 This AN-035 uses the quarchpy python package and demonstrates

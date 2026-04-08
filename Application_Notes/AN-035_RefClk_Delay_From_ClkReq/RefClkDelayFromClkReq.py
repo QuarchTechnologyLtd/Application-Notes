@@ -94,11 +94,8 @@ def main():
     #Most pins will have a 25ms delay so we will add 25ms onto the delay the user selects
     delay = str(int(delay_selected) + 25)
 
-    #Adds the ms suffix to the delay - e.g. if 100 is selected, delay will be 125ms
-    delay = delay + "ms"
-
-    #Optional Hardcode - uncomment this, and comment in the lines above if you want to hardcode the delay
-    #delay_selected = "125ms"
+    #Optional Hardcode - uncomment this, and comment in the lines above if you want to hardcode the delay in ms
+    #delay_selected = "125"
 
     #We need to sample faster than the delay, so at 1ms or 10ms delay we will use a 100us resample rate
     if delay_selected == "1ms" or delay_selected == "10ms":
