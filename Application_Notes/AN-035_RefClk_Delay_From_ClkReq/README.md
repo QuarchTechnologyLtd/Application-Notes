@@ -21,7 +21,7 @@ This AN-035 uses the quarchpy python package and demonstrates
 
 ## Requirements
 ### Hardware
-- PAM and a PAM Fixture capable of measuring RefClk (Most Gen6 PAM fixtures)
+- PAM and a PAM Fixture capable of measuring RefClk (Most Gen6 PAM fixtures, and some Gen5)
 - Triggering breaker
 - MCX loopback cable
 - Separate host and control PCs
@@ -29,7 +29,7 @@ This AN-035 uses the quarchpy python package and demonstrates
 ### Software
 - Python (3.x recommended)
     [Download Python](https://www.python.org/downloads/)
-- Quarchpy python package
+- Quarchpy python package (2.2.19 or later)
     [Quarchpy Python Package](https://quarch.com/products/quarchpy-python-package/)
 
 

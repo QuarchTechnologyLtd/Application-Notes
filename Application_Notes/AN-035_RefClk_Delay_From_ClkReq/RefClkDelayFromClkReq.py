@@ -8,8 +8,9 @@ It is suggested to use a system startup rather than exiting a low power state to
 It is best suited to use separate host and control PCs, so that we can record the start-up, when ClkReq# is likely to change.
 We output CLKREQ# to trigger out, which is looped back to trigger in, and the trigger in action is to alter the hot plug state - i.e. plug the device.
 
-This was written using a QTL3238 Gen6 x16-0 AIC Breaker, and a QTL3216 Gen6 AIC PAM. As such, the signal names are written for these,
-so minor variations might be needed to work with other modules. You will need a breaker that can break CLKREQ# and RefClk, and a PAM that can measure RefClk.
+This script needs to use a breaker  that can break RefClk (Most can), a PAM with RefClk Buffers (generally Gen6 and newer modules), and a form factor that
+commonly uses CLKREQ#, such as M.2. This was written using a QTL3238 Gen6 x16-0 AIC Breaker, and a QTL3108 Gen5 AIC to M.2 PAM as this has a RefClk buffer.
+As such, the signal names are written for these, so minor variations might be needed to work with other modules.
 
 The commands sent to the device are in the format
 RUN:POWer UP
@@ -17,7 +18,7 @@ The commands are based on SCPI control system, but not all SCPI has been impleme
 Commands are not case-sensitive. Most commands will have short forms - e.g. POWer shortens to POW
 
 ########### VERSION HISTORY ###########
-06/04/2025 -  Andrew S - First Release
+29/04/2025 -  Andrew S - First Release
 
 ########### REQUIREMENTS ###########
 
@@ -33,11 +34,12 @@ Commands are not case-sensitive. Most commands will have short forms - e.g. POWe
 ########### INSTRUCTIONS ###########
 
 1- Install the required items above
-2- Connect PCIe Triggering Breaker
-3- Connect PCIe PAM that is able to measure RefClk
-4- Connect PAM and Quarch Interface Unit with USB to control PC
-5- Connect Power cables to PAM and Quarch Interface Unit
-6- Run the script and follow the instructions on screen
+2- Plug the Breaker into the Host
+3- Plug the PAM into the Breaker
+4- Plug the drive into the PAM
+5- Connect PAM and Quarch Interface Unit with USB to control PC
+6- Connect Power cables to PAM and Quarch Interface Unit
+7- Run the script and follow the instructions on screen
 
 Section 2.10 of the PCI Express Card Electromechanical Specification. Revision 6 summarises to:
 ClkReq# is an optional, active low signal driven low by the add-in card to request RefClk.
@@ -57,6 +59,7 @@ Section 6.18 Latency Tolerance Reporting (LTR Mechanism) is set by the endpoint 
                         1 nanosecond to 34.3 seconds.
 """
 
+#Imports
 import quarchpy
 from quarchpy.connection_specific.connection_QPS import QpsInterface
 from quarchpy.debug.versionCompare import requiredQuarchpyVersion
@@ -81,30 +84,30 @@ def main():
     print("While the stream is running, CLKREQ# should be asserted. This could be power up, or exiting a sleep state")
     print("This stream will run for 60 seconds")
 
-    #Checks that the customer is on a relatively recent version of Quarchpy
+    #Checks that the customer is on a recent version of Quarchpy
     requiredQuarchpyVersion("2.2.19")
 
     print("It is suggested for a first test to use 100ms delay. Please select the delay in millseconds")
-    #This is a list of delays that the user can select
-    delay_list = "1,10,50,100,500,1000"
+    #This is a list of delays in milliseconds that the user can select
+    delay_list = "100,150,200,500,750,1000"
 
     #User selects the delays, shown in a table
     delay_selected = listSelection(title="", message="Select the delay between CLKREQ# and RefClk - in milliseconds", selectionList=delay_list, nice=True)
 
-    #Most pins will have a 25ms delay so we will add 25ms onto the delay the user selects
-    delay = str(int(delay_selected) + 25)
+    #Set the delay to the selected delay
+    delay = delay_selected
 
-    #Optional Hardcode - uncomment this, and comment in the lines above if you want to hardcode the delay in ms
-    #delay_selected = "125"
+    #Optional Hardcode - uncomment this, and comment in the lines above if you want to hardcode the delay
+    #delay_selected = "300"
 
     #We need to sample faster than the delay, so at 1ms or 10ms delay we will use a 100us resample rate
     if delay_selected == "1ms" or delay_selected == "10ms":
         resample_rate = "100us"
-    else: #With a 50ms or longer delay, we will use a 1ms resample rate
-        resample_rate = "1ms"
+    else: #With a 50ms or longer delay, we will use a 500us resample rate
+        resample_rate = "500us"
 
     #Provides instructions about how to set-up the module
-    showDialog(title="", message="Connect the breaker trigger out, to the breaker trigger in with an MCX loopback cable.\n")
+    showDialog(title="", message="Connect the breaker trigger out, to the breaker trigger in with an MCX loopback cable.\nConnect the modules in the order: Host -> Breaker -> PAM -> Device")
 
     print("Connecting to Breaker...")
 
@@ -126,6 +129,12 @@ def main():
     # Print the device name after the selection to confirm connection
     print("Breaker Name:")
     print(breaker.send_command("hello?"))
+
+    #Sets breaker to default state
+    breaker.send_command("CONFig:DEFault STATE")
+
+    #Power down the breaker
+    breaker.send_command("RUN:POWer DOWN")
 
     #PAM Connection
     #Start QPS if not already running
@@ -155,29 +164,31 @@ def main():
     #Resamples the PAM via the QIS command stream mode resample
     pam.sendCommand(f"stream mode resample {resample_rate}")
 
-    #Sets breaker to default state
-    breaker.send_command("CONFig:DEFault STATE")
 
-    #Power down the breaker
-    breaker.send_command("RUN:POWer DOWN")
-
-    #Set trigger out to sideband monitor
-    breaker.send_command("TRIGger:OUT:MODE:SIDEband")
-
-    #Sets CLKREQ# to sideband monitor - CLKREQ# is now being outputted over trigger out
-    breaker.send_command("TRIGger:MONitor OUT:CLKREQ:DEVICE")
-
+    #Configure the breaker to hot plug upon trigger in changing
     #When trigger in received (CLKREQ# changing), hot plug will be performed, and after the delay, RefCLk switches will close
     breaker.send_command("TRIGger:IN:MODE:POWER")
 
-    #CLKREQ# is active low so we invert the triggering logic
+    #CLKREQ# is active low so we invert the triggering logic, so that when it goes low, we power up
     breaker.send_command("TRIG:IN:INVERT ON")
 
-    #Source 4 is unused by default, so we will use that for RefClk
-    breaker.send_command(f"SOURce:4:DELAY {delay}")
+    #Set trigger out to sideband monitor - this will output our chosen sideband
+    breaker.send_command("TRIGger:OUT:MODE:SIDEband")
+
+    #Sets CLKREQ# to sideband monitor - CLKREQ# is now being outputted over trigger out, which is connected to trigger in via a cable
+    breaker.send_command("TRIGger:MONitor OUT:CLKREQ:DEVICE")
+
+    #Sets all signals to source 7 - immediate change
+    breaker.send_command("SIGnal:ALL:SOURce 7")
+
+    #Set CLKREQ# to always on - the switch won't toggle and just pass the signal through, so we can trigger from it
+    breaker.send_command("SIGnal:CLKREQ:SOURce 8")
+
+    #Source 1 is now unused, so we will assign the selected delay to it
+    breaker.send_command(f"SOURce:1:DELAY {delay}")
 
     #Assign signal group RefClk to Source 4 with our assigned delay
-    breaker.send_command("SIGnal:REFCLK:SOURce 4")
+    breaker.send_command("SIGnal:REFCLK:SOURce 1")
 
     #Sleeps to ensure commands are set properly
     time.sleep(1)
@@ -190,14 +201,17 @@ def main():
     #Sleeps to ensure filepath is made
     time.sleep(1)
 
+    #Sets the stream length in seconds
+    stream_length = 60
+
     #Start QPS Stream to record in the current working directory, with a timestamped filename
     #This will stream for 60 seconds, but the breaker will remain configured after this time is up
-    pam.start_stream(directory=(stream_path + "\\" + file_name), stream_duration="60")
+    pam.start_stream(directory=(stream_path + "\\" + file_name), stream_duration=f"{stream_length}")
 
     print("Streaming...")
 
     #Streams for 60 seconds, so we will sleep for 63 seconds so we don't end the stream early
-    visual_sleep(63)
+    visual_sleep(stream_length + 3)
 
     print("\nStream Completed")
 
@@ -206,7 +220,7 @@ def main():
     print("\nTo verify compliance with the PCIe specification, review the Quarch Power Studio trace. ")
     print("The PCIe specification does not provide a maximum time between CLKREQ# assertion and RefClk becoming valid, leaving it to the device to specify this\n")
 
-
+    #Display the relevant part of the specification
     print("PCIe Base Specification Revision 6.3:\n")
 
     print("Section 5.5.5 states T(L10_REFCLK_ON) is the time between CLKREQ# assertion to RefClk Valid when exiting L1.2\n")
