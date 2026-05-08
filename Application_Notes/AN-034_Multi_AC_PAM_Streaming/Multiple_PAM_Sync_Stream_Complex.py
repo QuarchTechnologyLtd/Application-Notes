@@ -68,10 +68,11 @@ def main():
     #quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
+    #Display the title and instructions in a table - neater than print statements
     displayTable(["AN-034 - Multiple PAM Synchronous Stream Complex\n","Connect the devices over IP on the same network"], printToConsole=True, align="c")
 
-    #Requires features added in 2.2.17
-    requiredQuarchpyVersion("2.2.17")
+    #Requires features added in 2.2.19
+    requiredQuarchpyVersion("2.2.19")
 
     connection_type = "QIS"
 
@@ -86,51 +87,37 @@ def main():
         myQis = QisInterface()
         keep_qis_running = True
 
-
-    #Start of parameter selection - optional hardcodes are commented in
-    #User selects stream length
     print("Please input the stream length in seconds. Leave blank for default of 60 seconds")
     # Takes user input
     stream_length_input = str(input("Please enter stream length in seconds: "))
-    # Checks if blank
+    #Optional hardcode - uncomment this and comment in the line above to hardcode the stream length - change line 71 to change the stream length
+    #stream_length_input = ""
+
+    #We check if the inputted value is black
     if stream_length_input == "":
-        # Sets to 60 seconds if left blank
-        stream_length = float(60)
+        #If it is, we use the default of 60 seconds
+        stream_length = 60
+
     else: #Some value has been entered
         try: #If stream_length_input is not a number, will fail
-            if int(stream_length_input) > 0:
-                # Otherwise, take the users input
-                stream_length = float(stream_length_input)
-            else:
-                # Value entered is either 0, or negative
+
+            if int(stream_length_input) > 0: #Check if the inputted value is positive
+                #If it is positive, take the users input
+                stream_length = int(stream_length_input)
+
+            else:# Value entered is either 0, or negative
                 print("Value entered is invalid - Using default of 60 seconds")
                 # Uses default length
-                stream_length = float(60)
+                stream_length = 60
+
         except ValueError: #Catches the error
             print("Value entered is invalid - Using default of 60 seconds")
-            stream_length = float(60)
+            stream_length = 60
+
     print(f"Stream length selected is: {stream_length} seconds")
 
     #Optional Hardcode - comment in lines above, uncomment this
-    #stream_length = float(60)
-
-    #Sets Resample Rate
-    #If both are DC PAMs, allow up to 4us sampling
-    ac_pam = showYesNoDialog(title="PAM type?", message="Is at least 1 of the PAMs an AC PAM?")
-    if ac_pam == "No":
-        # Has higher resolution sampling available
-        resample_rate_list = "4us,16us,100us,1ms,4ms,16ms,100ms,1s"
-
-    # If at least one is not a DC PAM, allow up to 250us sampling - we want all PAMs to stream at the same resample rate
-    else:
-        resample_rate_list = "250us,1ms,4ms,16ms,100ms,1s"
-
-    # Takes the user input
-    resample_rate = listSelection(title="Select resample rate", message="Select resample rate",
-                                  selectionList=resample_rate_list, nice=True)
-
-    #Optional Hardcode - comment in lines above, uncomment this
-    #resample_rate = "1ms"
+    #stream_length = 60
 
     print("How many PAMs are you using?")
     #Quit is an option to match up indexing - 2 pams enter 2, 4 pams enter 4
@@ -167,6 +154,22 @@ def main():
     #               {"address": "TCP:10.0.8.95",      "filename": "RawDataPam5.csv"}]
     #END of stream parameter configuration
 
+    #We ask the user if all PAMs are DC PAMs. This is easier than connecting and disconnecting up to 5 PAMs.
+    all_dc_pams = showYesNoDialog(title="", message="Are all PAMs used QTL2312 Standard DC PAMs?")
+    if all_dc_pams == "Yes":
+        #This means we can resample at up to 4us. This is the same across both analog and digital channels
+        allow_4us_sampling = True
+    else:#At least one of the PAMs is not a DC PAM. Therefore, we will limit the resample rate to 125us.
+        #This will be the same across PAMs, so a DC PAM and AC PAM would both sample at 125us.
+        allow_4us_sampling = False
+
+    # Takes user input for the resample rate
+    resample_rate_input = str(input("Please enter resample rate in the format: 125us, 1ms, 1s: "))
+
+    # This is a function to validate the inputted resample rate
+    # If an invalid option is entered, it will use the default of 1ms
+    resample_rate = syncUtils.validate_resample_rate(resample_rate_input, allow_4us_sampling)
+
     #If Windows
     if os.name == "nt":
         #Creates the object
@@ -182,8 +185,11 @@ def main():
         print("OS not currently supported. Please use a Windows or POSIX system")
         raise OSError("Unsupported operating system")
 
-    #Start the stream
-    syncStreamObj.stream(connection_type)
+    #Get the approximate time for the stream start, formatted into YYMMDD-HHMMSS
+    stream_start_time_for_filename =time.strftime("%Y_%m_%d-%H_%M_%S")
+
+    #Start the stream, and capture the array of start times
+    stream_start_times_ns = syncStreamObj.stream(connection_type)
 
     print("Stream completed\n")
     print("Combining CSV files...")
@@ -191,55 +197,57 @@ def main():
     #Creates a filelist of the file names
     filelist = [pam["filename"] for pam in pam_configs]
 
-    #Combine the CSVs with a shared time column
-    combined_csv_path = syncUtils.csv_combiner(filelist)
-    print(f"Combined CSV file can be found : {combined_csv_path}")
-
     #Stream is complete
     #Asks user if they want to combine data and display it in QPS
-    display_in_qps = showYesNoDialog(title="Post-process?", message="Do you want to display the data in QPS?")
+    post_process = showYesNoDialog(title="Post-process?", message="Do you want to display the data in QPS?")
 
     #Optional Hardcode - uncomment one of these lines, comment in line above
-    #display_in_qps = "Yes"
-    #display_in_qps = "No"
+    #post_process = "Yes"
 
-    if display_in_qps == "Yes":
-        #QPS will connect to PAM 1
-        pam_address = pam_configs[0]["address"]
-        #And then convert and open in QPS
-        syncUtils.view_csv_in_qps(combined_csv_path, pam_address)
-
-        #Iterates over PAM_Configs, from PAM 2 onwards
-        for pam in pam_configs[1:]:
-            # Gets address of the PAMs
-            address = pam["address"]
-
-            # Closes connection to PAMs
-            myQis.send_command(f"close {address}")
-
-    #If no, exit the script, provide filepath to the CSVs
-    if display_in_qps == "No":
-        #For each PAM, display the filepath, close the connection
-        for pam in pam_configs:
-            #Gets absolute path of the stream CSVs
-            address = pam["address"]
-            file = pam["filename"]
+    #If no, exit the script
+    if post_process == "No":
+        #Gets absolute path of the stream CSVs
+        for file in filelist:
             path = os.path.abspath(file)
+            print(f"PAM data can be found at: {path}")
 
-            #Display the absolute path of the stream CSVs
-            print(f"PAM {pam} stream data can be found: {path}")
+        print("Closing connections...")
 
-            #Closes connection to PAMs
-            myQis.send_command(f"close {address}")
-
-        #If QIS was already open, leave running.
+        #If we launched QIS in the script, we will close QIS in the script
         if not keep_qis_running:
-            #Closes connection to QIS
+            print("Closing QIS")
+            closeQis()
+        else:
+            #If QIS was already running, leave it running, but close the device connection
             myQis.close_connection()
 
         print("Exiting...")
 
-        exit(0)
+        #Exit the script
+        sys.exit(0)
+
+    if post_process == "Yes":
+        print("Launching QPS to view the trace")
+
+        #Get the address of the first PAM
+        primary_pam = pam_configs[0]["address"]
+
+        #Single function call. This will
+        #A) Merge the CSVs and align the timestamps
+        #B) Convert the CSV data into a QPS Recording
+        #C) Open the QPS recording, and show either 100s worth of recording, or the stream length, whichever is less
+        combined_csv_path = syncUtils.view_csv_in_qps(primary_pam, stream_length, stream_start_time_for_filename, filelist, stream_start_times_ns)
+
+        if not keep_qis_running:
+            print('Closing QIS...')
+            closeQis()
+        else:
+            print("Leaving QIS open, closing device connections")
+            myQis.close_connection()
+
+        print("Exiting...")
+
+        sys.exit(0)
 
 
 if __name__ == "__main__":

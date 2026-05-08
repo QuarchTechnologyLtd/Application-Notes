@@ -44,6 +44,9 @@ class UsingC(ABC):
 
         self.ip_addresses = []
 
+        #False, to prevent crashes if both devices are connected over USB
+        self.ping_allowed = False
+
         #Checks if the PAMs are connected via IP, and therefore whether we can ping the device
         #pam_1_address is in the form "TCP:1.1.1.1"
         for pam in pam_configs:
@@ -73,7 +76,7 @@ class UsingC(ABC):
             for ip_address in self.ip_addresses:
                 syncUtils.ping_device(ip_address)
 
-        self.coordinate_multiproc_trigger(self.stream_length, self.pam_configs, connection_type, self.so_file)
+        return self.coordinate_multiproc_trigger(self.stream_length, self.pam_configs, connection_type, self.so_file)
 
     @staticmethod
     def compile_c_lib(C_CODE: str):
@@ -121,8 +124,11 @@ class UsingC(ABC):
                                 filename: str,
                                 stream_duration: float,
                                 resample_rate: str,
-                                so_file: str = "spin_core.dll",
-                                connection_type: str = "QIS"):
+                                so_file: str,
+                                connection_type: str,
+                                ready_event,
+                                trigger_times_array,
+                                pam_index):
         """
         This is a worker function. This is executed on different cores for different PAM devices
         Args:
@@ -133,11 +139,14 @@ class UsingC(ABC):
             resample_rate: Rate at which to resample
             so_file: The compiled C code
             connection_type: Default QIS
+            ready_event: Flag - Shared multiprocessing event between the PAM processes.
+            trigger_times_array: Shared array of timestamps
+            pam_index: The PAM index
         Returns None:
         """
 
         try:
-            # Connects 1st pam device to the same QIS Instance - timeout of 20s
+            # Connects each pam device to the same QIS Instance - timeout of 20s
             pam = get_quarch_device(connectionTarget=pam_address, ConType=connection_type)
 
             # Upgrades PAM to quarchPPM class - named before the PAM was created, works for all power products
@@ -149,15 +158,31 @@ class UsingC(ABC):
             # Loads the compiled file
             lib = ctypes.CDLL(os.path.abspath(so_file))
 
+            #Set multiprocessing shared event as ready
+            ready_event.set()
+
             # Calls the spin_until function inside, keeps CPU busy and ready
             lib.spin_until(ctypes.c_int64(target_ns))
 
             # Starts stream
             pam_power_device.start_stream(file_name=filename, stream_duration=stream_duration)
 
+            #If POSIX use a different clock compared to windows
+            clock_id = time.CLOCK_MONOTONIC if os.name == "posix" else None
+
+            #Take the timestamp of the stream starting, and store it in an array
+            trigger_times_array[pam_index] = time.clock_gettime_ns(clock_id) if clock_id else time.time_ns()
+
+            print(f"[{pam_address}] Streaming started...")
+
+            #Sleep for stream length, with a 2 second buffer so we don't close too early
+            time.sleep(stream_duration + 2)
+
         # Catches potential exception
         except Exception as e:
             print(f"Error triggering stream: {e}")
+            #We will set the event even if we have an error, so the main script doesn't hang if we fail somewhere
+            ready_event.set()
             sys.stdout.flush()  # Forces output
 
     def coordinate_multiproc_trigger(
@@ -175,12 +200,23 @@ class UsingC(ABC):
             so_file: The compiled C code
         Returns None:
         """
+        #Check how many PAMs we are using by checking the length of pam_configs
+        pam_count = len(pam_configs)
+        # Shared array to capture the timestamps of the recording
+        # q is a signed 64 bit integer - equivalent to long long. Used to store time in nanoseconds where we need the size
+        # pam_count means we reserve pam_count 64 bit slots in the shared memory, 1 PAM we have connected
+        trigger_times = multiprocessing.Array("q", pam_count)
+
+        #Loop over the PAM counts, but we don't actually use the index, hence _ by convention
+        ready_events = [multiprocessing.Event() for _ in range(pam_count)]
+
         if os.name == "nt":  # If windows correct for epoch differences
             # Windows FileTime epoch is different from Unix Epoch
             # Windows Epoch is 1601, Unix Epoch is 1970 - The difference is 11 644 473 600 seconds
             # This is unix epoch (1970) since Windows epoch (1601), expressed in nanoseconds.
             epoch_correction_ns = (11644473600 * 1000000000)
 
+            #Target time is current time in nanoseconds, corrected for the epoch, and 5 seconds in the future
             # Add a 5 seconds delay
             target = time.time_ns() + int(5 * 1e9) + epoch_correction_ns
 
@@ -188,38 +224,53 @@ class UsingC(ABC):
             # CLOCK_MONOTONIC is the absolute elapsed time since system boot
             target = time.clock_gettime_ns(time.CLOCK_MONOTONIC) + int(5 * 1e9)
 
+        #Create empty list to put our processes in
         processes = []
 
-        common_args = {
-            "target_ns": target,
-            "stream_duration": stream_duration,
-            "resample_rate": self.resample_rate,
-            "so_file": so_file,
-            "connection_type": connection_type
-        }
+        #Loop over the PAM configs
+        for i, pam in enumerate(pam_configs):
+            #These kwargs are for the sync_and_trigger_stream function
+            worker_kwargs = {
+                "target_ns": target,
+                "stream_duration": stream_duration,
+                "resample_rate": self.resample_rate,
+                "so_file": so_file,
+                "connection_type": connection_type,
+                "pam_address": pam["address"],
+                "filename": pam["filename"],
+                "ready_event": ready_events[i],
+                "trigger_times": trigger_times,
+                "index": i
+            }
 
-        # If all devices are connected via IP
-        if self.ping_allowed:
-            for ip_address in self.ip_addresses:
-                syncUtils.ping_device(ip_address)
-
-        #Able to select how many PAMs are connected
-        for pam in pam_configs:
-            worker_kwargs = {**common_args,
-                             "pam_address": pam["address"],
-                             "filename": pam["filename"]}
-
-        # Create Process objects
+            #Create the process, calling the sync function, and pass in the arguments we created above
             process = multiprocessing.Process(target=self.sync_and_trigger_stream, kwargs=worker_kwargs)
-
-            # Starts the processes activity
+            #Start the process
             process.start()
+            #Add the process we just made to the list of processes
             processes.append(process)
 
+        print("Waiting for hardware connections...")
+        #For each event we have created
+        for event in ready_events:
+            #Make sure we wait, so we can trigger once all workers signal they are ready
+            event.wait()
 
+        print("All PAMs connected, spinning up CPU")
+
+        #For each process we have made
         for process in processes:
-            # Blocks the main script until both processes are done
-            process.join()
+            # Blocks the main script until both processes are done, with a 15 second buffer
+            process.join(timeout=stream_duration + 15)
+
+        #Now the stream is complete, for each process we have created
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join()
+
+        #Return the list of stream start times we recorded earlier
+        return list(trigger_times)
 
 class CWindows(UsingC):
     def __init__(self, pam_configs, stream_length, resample_rate):
@@ -262,8 +313,6 @@ class CWindows(UsingC):
 
         #Checks compiler is available
         self.compiler_check()
-
-        self.ping_allowed = None
 
         #Compiles the C Script
         self.so_file = self.compile_c_lib(C_CODE)
@@ -327,8 +376,6 @@ class CPosix(UsingC):
             os.nice(-20)  # Sets this script as highest priority
         except PermissionError:
             print("Warning: Run with sudo to enable high-priority timing.")
-
-        self.ping_allowed = None
 
         #Checks compiler is installed and accessible
         self.compiler_check()
