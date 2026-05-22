@@ -239,8 +239,8 @@ class UsingC(ABC):
                 "pam_address": pam["address"],
                 "filename": pam["filename"],
                 "ready_event": ready_events[i],
-                "trigger_times": trigger_times,
-                "index": i
+                "trigger_times_array": trigger_times,  # <-- Changed to match
+                "pam_index": i  # <-- Changed to match
             }
 
             #Create the process, calling the sync function, and pass in the arguments we created above

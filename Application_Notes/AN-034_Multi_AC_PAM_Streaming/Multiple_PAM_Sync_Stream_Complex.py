@@ -69,12 +69,14 @@ def main():
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
     #Display the title and instructions in a table - neater than print statements
-    displayTable(["AN-034 - Multiple PAM Synchronous Stream Complex\n","Connect the devices over IP on the same network"], printToConsole=True, align="c")
+    displayTable(["AN-034 - Multiple PAM Synchronous Stream Complex","Connect the devices over IP on the same network"], printToConsole=True, align="c")
 
     #Requires features added in 2.2.19
     requiredQuarchpyVersion("2.2.19")
 
     connection_type = "QIS"
+
+    print("Launching QIS")
 
     # Start QIS if not running
     if not isQisRunning():
@@ -128,7 +130,7 @@ def main():
         exit(0)
 
     #Optional hardcode - uncomment this and comment in lines above
-    #pam_count = "2"
+    #pam_count = "5"
 
     #Dictionary of PAM addresses and their file names
     pam_configs = []
@@ -147,18 +149,21 @@ def main():
         })
 
     #Uncomment this if wanting to hardcode, and comment in section above
-    #pam_configs = [{"address": "USB:QTL2312-01-477", "filename": "RawDataPam1.csv"},
-    #               {"address": "USB:QTL2312-01-035", "filename": "RawDataPam2.csv"},
-    #               {"address": "TCP:10.0.8.95",      "filename": "RawDataPam3.csv"},
-    #               {"address": "USB:QTL2312-01-001", "filename": "RawDataPam4.csv"},
-    #               {"address": "TCP:10.0.8.95",      "filename": "RawDataPam5.csv"}]
+    #pam_configs = [{"address": "TCP:10.0.8.95", "filename": "RawDataPam1.csv"},
+                   #{"address": "TCP:10.0.8.59", "filename": "RawDataPam2.csv"},
+                   #{"address": "TCP:10.0.8.107",      "filename": "RawDataPam3.csv"},
+                   #{"address": "TCP:10.0.8.109", "filename": "RawDataPam4.csv"},
+                   #{"address": "TCP:10.0.8.110",      "filename": "RawDataPam5.csv"}]
     #END of stream parameter configuration
 
-    #We ask the user if all PAMs are DC PAMs. This is easier than connecting and disconnecting up to 5 PAMs.
-    all_dc_pams = showYesNoDialog(title="", message="Are all PAMs used QTL2312 Standard DC PAMs?")
-    if all_dc_pams == "Yes":
+    model_list = [pam["address"].split(":")[-1].split("-")[0] for pam in pam_configs]
+    print(model_list)
+    all_dc_pams = all(model=="QTL2312" for model in model_list)
+    print(all_dc_pams)
+    if all_dc_pams:
         #This means we can resample at up to 4us. This is the same across both analog and digital channels
         allow_4us_sampling = True
+
     else:#At least one of the PAMs is not a DC PAM. Therefore, we will limit the resample rate to 125us.
         #This will be the same across PAMs, so a DC PAM and AC PAM would both sample at 125us.
         allow_4us_sampling = False
