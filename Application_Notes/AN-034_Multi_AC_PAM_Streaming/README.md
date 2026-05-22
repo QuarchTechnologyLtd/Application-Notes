@@ -1,3 +1,9 @@
+#AN-034
+Both scripts provided here are designed to stream from 2 PAMs, simultaneously. We use QIS, then optionally combine CSVs, and display into QPS. 
+Suggested applications:
+Streaming from 2 AC PAMs where the system power is greater than a single PAMs rating
+Streaming from 2 drives and a GPU in a system
+
 # AN-034 - Multiple PAMs Synchronous Streaming - Simple
 
 ## Overview - MultiPAM_Stream_Simple
