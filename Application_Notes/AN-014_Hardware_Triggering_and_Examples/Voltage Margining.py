@@ -6,7 +6,7 @@ This uses the quarchpy python package and demonstrates
 - Connecting to a module
 - Runs a simple script for the PPM
 - Capturing the power event using a data stream
-- Pandas analysis to search for where the drive dropped off (Power is less than 50mW)
+- Using Pandas to search for data under a threshold
 
 This is designed for PCIe CEM devices, and as such, the PCIe CEM spec is referenced, and is intended for a PCIe AIC fixture.
 You can use the same host and control PC for this.
@@ -30,10 +30,10 @@ You can use the same host and control PC for this.
 ########### INSTRUCTIONS ###########
 
 1- Install the required items above
-2- Connect Power Injection Fixture, and the drive
-3- Connect PPM to the PC
-4- Run the script and follow the instructions on screen
-5- Refer to AN-014 set-up section for an illustration
+2- Insert the Power Injection Fixture into the host, and the drive into the Fixture
+3- Connect the PIF to the PPM
+4- Connect PPM to the PC
+5- Run the script and follow the instructions on screen
 
 ####################################
 """
@@ -45,6 +45,7 @@ import logging  # Optionally used to create a log to help with debugging
 
 # Import the necessary components from the quarchpy library
 import quarchpy
+from quarchpy.debug.versionCompare import requiredQuarchpyVersion
 from quarchpy.device import *
 from quarchpy.qps import *
 from quarchpy.user_interface import *
@@ -60,14 +61,21 @@ def main():
     # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
     # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
 
+    requiredQuarchpyVersion("2.2.19")
+
+    #Time to ramp over
+    ramp_time = 5
+    #Time we wait in between margining the rails for the drive to come back online
+    power_up_time = 5
+
     print("Quarch application note example: AN-014 Triggering")
     print("---------------------------------------\n\n")
 
-    # Checks is QPS is running on the local machine
+    #Checks if QPS is running on the local machine
     if not isQpsRunning():
     #If it is not already running, launch it
         print("Loading QPS..")
-        my_qps = startLocalQps(keepQisRunning=True)
+        my_qps = startLocalQps()
     #Else, if QPS is already running use that instance
     else:
         print("Using existing QPS..")
@@ -81,13 +89,14 @@ def main():
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address as shown below
     #my_device_id = "USB:QTL1999-06-127"
+    #my_device_id = "TCP:10.0.8.100"
 
     # Create a Quarch device connected via QPS
     my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
 
     # Upgrade Quarch device to QPS device
     my_qps_device = quarchQPS(my_quarch_device)
-    #Open connection
+    #Open connection to the PPM
     my_qps_device.open_connection()
 
     #Powers on PPM so drive can be detected
@@ -112,9 +121,11 @@ def main():
 
         else:#If this is a 5V fixture, exit the script as this is designed for 12V and 3V3
             print("This script is designed for PCIe devices with a 12V rail and a 3V3 rail, not a 5V rail")
-            #Exit cleanly, close the PPM and QPS connection
+            # Exit cleanly, close the PPM connection and QPS
             my_qps_device.close_connection()
-            my_qps.closeConnection()
+            closeQps()
+
+            # Exit the script
             sys.exit(0)
 
     #Change the resampling rate to 100us
@@ -124,8 +135,15 @@ def main():
     my_qps_device.send_command("CONFig:OUT:3v3:PULLdown ON")
 
     #Sets the voltage channels to nominal, and clear any previous pattern
-    reset_12v(my_qps_device)
-    reset_3v3(my_qps_device)
+    # Clear any previous pattern
+    my_qps_device.send_command("SIGnal:12v:PAT CLEAR")
+    # Set 12V to 12000mv (==12V)
+    my_qps_device.send_command("SIGnal:12v:VOLTage 12000")
+
+    # Clear any previous pattern
+    my_qps_device.send_command("SIGnal:3v3:PAT CLEAR")
+    # Set 3v3 to 3300mV
+    my_qps_device.send_command("SIGnal:3v3:VOLTage 3300")
 
     #Create a folder called QPS Traces in the current working directory
     stream_path = os.path.join(os.getcwd(), "QPS_Traces")
@@ -136,13 +154,14 @@ def main():
     #Start stream
     my_stream = my_qps_device.start_stream(os.path.join(stream_path, timestamp_stream_start))
 
-    #Wait 5 seconds before we start margining
-    time.sleep(5)
+    #Wait 3 seconds before we start margining
+    time.sleep(3)
 
     print("Margining 12V rail")
 
     #Load 12V Pattern
-    ramp_12v(my_qps_device)
+    #To ramp down -12V down to 0 over 5s
+    my_qps_device.send_command(f"SIGnal:12v:PATtern ADD {ramp_time}s -12000 i")
 
     #Wait 1 second for the pattern to be loaded
     time.sleep(1)
@@ -150,16 +169,19 @@ def main():
     # Run 12V pattern
     my_qps_device.send_command("RUN:PATtern")
 
-    #Pattern will run over 5 seconds, so after 7 seconds (2 second buffer) we will reset the rail to nominal
-    visual_sleep(7)
-    reset_12v(my_qps_device)
+    #Pattern will run over ramp_time seconds (default 5), so after ramp_time + 2 second buffer) we will reset the rail to nominal
+    visual_sleep(ramp_time + 2)
+    # Clear any previous pattern
+    my_qps_device.send_command("SIGnal:12v:PAT CLEAR")
+    # Set 12V to 12000mv (==12V)
+    my_qps_device.send_command("SIGnal:12v:VOLTage 12000")
 
-    #Wait 10 seconds for the drive to come back online.
+    #Wait power_up_time seconds (default 5 seconds) for the drive to come back online.
     print("Power rail reset to nominal, waiting for drive to come back online")
-    visual_sleep(10)
+    visual_sleep(power_up_time)
 
     #Load the 3V3 pattern
-    ramp_3v3(my_qps_device)
+    my_qps_device.sendCommand(f"SIGnal:3v3:PATtern ADD {ramp_time}s -3300 i")
 
     #Wait 1 second for the pattern to be loaded
     time.sleep(1)
@@ -167,9 +189,17 @@ def main():
     #Run the 3v3 pattern
     my_qps_device.send_command("RUN:PATtern")
 
-    #Pattern will run over 5 seconds, so after 7 seconds (2 second buffer) we will reset the rail to nominal
-    visual_sleep(7)
-    reset_3v3(my_qps_device)
+    #Pattern will run over ramp_time seconds, so after ramp_time + 2 second buffer we will reset the rail to nominal
+    print("Margining 3V3 rail")
+    visual_sleep(ramp_time + 2)
+
+    # Clear any previous pattern
+    my_qps_device.send_command("SIGnal:3v3:PAT CLEAR")
+    # Set 3v3 to 3300mV
+    my_qps_device.send_command("SIGnal:3v3:VOLTage 3300")
+
+    #We wait 1 second to ensure the PPM has reset
+    time.sleep(1)
 
     #Stop stream
     my_stream.stop_stream()
@@ -181,54 +211,90 @@ def main():
     my_stream.save_csv(csv_path)
 
     #Calls the function for pandas to check where the drive dropped offline
-    drive_dropoff_12v, time_12v_dropoff, drive_dropoff_3v3, time_3v3_dropoff  = pandas_get_results(csv_path)
+    drive_dropoff_12v, time_12v_dropoff, drive_dropoff_3v3, time_3v3_dropoff  = pandas_calculate_results(csv_path)
 
-    response = None
+    #If we can't tell where the drive drops off (e.g. no cells under threshold), skip annotating
+    if drive_dropoff_12v is None:
+        print("Skipping annotating 12V drive annotating.")
+    else:
+        #We create the annotations in QPS for the voltage levels where we drop off
+        #Set response to None
+        response = None
+        #We poll, so we can ensure that the command is sent successfully
+        while response != "OK":
+            #Sends the command to QPS - appears similar to
+            #$stream annotation add 7765300uS 12V_Dropoff_10150mV
+            response = my_qps.sendCommand(f"$stream annotation add {time_12v_dropoff}uS 12V_Dropoff_{drive_dropoff_12v}mV")
 
-    #Now, we will create the annotations in QPS for the voltage levels where we drop off
-    while response != "OK":
-        response = my_qps.sendCommand(f"$annotate {time_12v_dropoff} 12V Dropoff {drive_dropoff_12v}mV")
-    while response != "OK":
-        response = my_qps.sendCommand(f"$annotate {time_3v3_dropoff} 3V3 Dropoff {drive_dropoff_3v3}mV")
+    #If 3V3 uses very little power, or another error, drive_dropoff_3v3 will return None
+    if drive_dropoff_3v3 is None:
+        print("Skipping annotating 3V3 drive annotating.")
 
-    print("QPS recording is now open, with annotations showing where the drive dropped off")
-    print(f"\nWhen margining the 12V rail, the drive dropped off at {drive_dropoff_12v} mV")
+    else:#If we can tell where the drive drops off, we will add the annotation
+        #Set response to None
+        response = None
+        # We poll, so we can ensure that the command is sent successfully
+        while response != "OK":
+            #Sends the command to QPS - appears similar to
+            #$stream annotation add 7765300uS 12V_Dropoff_10150mV
+            response = my_qps.sendCommand(f"$stream annotation add {time_3v3_dropoff}uS 3V3_Dropoff_{drive_dropoff_3v3}mV")
 
-    print(f"\nWhen margining the 3V3 rail, the drive dropped off at {drive_dropoff_3v3}")
 
+    print("\nQPS recording is now open, with annotations showing where the drive dropped off")
+
+    #We print a snippet of the CEM spec for the user to confirm whether they meet the spec
     print("\nThe PCIe CEM specification Rev5, Table 4-1 provides the specifications for the power rail")
     print("The device must function as normal within the limits of the power rail")
-    print("The 12V rail has a tolerance of 12V+/-8%. The lower limit of this is 11040mV")
 
-    if drive_dropoff_12v < 11040:
-        print("\nThe drive met the spec for the 12V rail")
+    print("\nThe 12V rail has a tolerance of 12V+/-8%. The lower limit of this is 11040mV")
+    print(f"When margining the 12V rail, the drive dropped off at {drive_dropoff_12v} mV")
+
+    #If there was an error finding where the drive drops off, we can't determine if the drive met the spec or not
+    if drive_dropoff_12v is None:
+        print("***********ERROR***********")
+        print("We could not detect where the drive dropped off when margining 12V rail")
+        print("The 12V_Power did not drop below 1mW. We can't accurately determine if the drive dropped off when margining 12V rail")
     else:
-        print("\nThe drive failed the specified tolerance for the 12V rail. It is suggested to re-run this test to confirm")
+        #Assuming we have found where the drive drops off, we say whether it met the spec
+        if drive_dropoff_12v < 11040:
+            print("\nThe drive met the spec for the 12V rail")
+        else:
+            print("\nThe drive failed the specified tolerance for the 12V rail. It is suggested to re-run this test to confirm")
 
     print("\nThe 3V3 rail has a tolerance of 3.3V+/-9%. The lower limit of this is 3003mV")
+    print(f"When margining the 3V3 rail, the drive dropped off at {drive_dropoff_3v3}")
 
-    if drive_dropoff_3v3 < 3003:
-        print("\nThe drive met the spec for the 3V3 rail")
+    #If there was an error finding where the drive drops off, we can't determine if the drive met the spec or not
+    if drive_dropoff_3v3 is None:
+        print("\n***********ERROR***********")
+        print("We could not detect whether the drive dropped off when we margined the 3V3 rail")
+        print("The device does not use enough power for us to determine where the drive drops off.")
     else:
-        print("\nThe drive failed the specified tolerance for the 3V3 rail. It is suggested to re-run this test to confirm")
+        #Assuming we have found where the drive drops off, we say whether it met the spec
+        if drive_dropoff_3v3 < 3003:
+            print("\nThe drive met the spec for the 3V3 rail")
+        else:
+            print("\nThe drive failed the specified tolerance for the 3V3 rail. It is suggested to re-run this test to confirm")
 
     print("Test complete, exiting script")
 
-    # Exit cleanly, close the PPM and QPS connection
+    # Exit cleanly, close the PPM connection and QPS
     my_qps_device.close_connection()
-    my_qps.closeConnection()
+    closeQps()
 
     #Exit the script
     sys.exit(0)
 
 
-def pandas_get_results(csv_path: str):
+def pandas_calculate_results(csv_path: str):
     """
     This opens the CSV that the stream data is saved to, scans through it to check for the first cell where the power is less than 1mW.
     We assume that any datapoint under 1mW means that the drive is idle.
+    We check if the 3V3 rail is using more than 1mW idle before we add annotations
 
     :params csv_path: The absolute path to the CSV that the stream data is exported to
 
+    If there is an error in finding where the drive drops off, we return None
     returns:
     voltage_12v_offline - the voltage of the 12V rail when the drive drops off
     time_12v_offline - the time of when the drive drops off
@@ -257,7 +323,7 @@ def pandas_get_results(csv_path: str):
     # Scan through 12V power. Get the first cell where 12V power is under the threshold set
     rows_under_threshold = df[col_12v_power < power_threshold]
 
-    # If we have some data that meets the criteria
+    #If we have some power data under the threshold
     if not rows_under_threshold.empty:
         # Get the index of the first row meeting the threshold
         first_index = rows_under_threshold.index[0]
@@ -270,7 +336,6 @@ def pandas_get_results(csv_path: str):
 
         # Store the time when power meets the threshold
         time_12v_offline = col_time.loc[target_index]
-        print("Found where drive dropped off")
 
     else:
         #If we don't have any rows matching the criteria, return None
@@ -278,84 +343,48 @@ def pandas_get_results(csv_path: str):
         time_12v_offline = None
         print(f"Warning: 12V power never dropped below 1mW.")
 
-    #Scan through 3V3 power, store the rows where the threshold is met
-    #We also lower the threshold to 100uW, as generally the 3V3 rail uses less power.
-    power_threshold = 100
+    #We check if 3V3 power is more than 1mW when we aren't margining (first 3 seconds)
+    #If the power is less than 1mW, we cannot accurately determine where the drive drops off, if it drops off at all.
+    #So we display a message explaining why we can't
 
-    #We check that the time is more than 22 seconds (stored in uS). This is the minimum time from the start of recording to margining the 3V3
-    #This is to prevent a potential issue of where the 3v3 rail uses very little power, so we get false flags of the drive being offline before we margin the rail
-    rows_under_threshold = df[(col_3v3_power < power_threshold) & (col_time > 22000000)]
+    #Get the power cells where time is less than 3 seconds (in uS)
+    idle_3v3_power = col_3v3_power[col_time <= 3000000]
 
-    #If we have some data that meets the criteria
-    if not rows_under_threshold.empty:
-        #Get the index of the first row meeting the threshold
-        first_index = rows_under_threshold.index[0]
+    #Checks if mean 3V3 power in the first 3 seconds is less than 1mW.
+    if idle_3v3_power.mean() <= power_threshold:
+        print("\nThe 3V3 power never dropped below 1mW before we start margining.")
+        print("We cannot accurately find where the drive drops off when margining the 3V3 rail")
 
-        #We check the index is more than 0, and adjust indexing by 1 to account for column names
-        target_index = max(0, first_index - 1)
-
-        #Store the 3V3 voltage when power meets the threshold
-        voltage_3v3_offline = col_3v3_volt.loc[target_index]
-
-        #Store the time when power meets the threshold
-        time_3v3_offline = col_time.loc[target_index]
-
-        print("Found where drive dropped off")
-
-    else:
-        #If we don't have any rows matching the criteria, we will return None
+        #Set the return variables to None
         voltage_3v3_offline = None
         time_3v3_offline = None
-        print(f"Warning: 3V3 power never dropped below 1mW.")
 
+    else: #The drive uses more than 1mW when idle, so we assume that we can find where the drive drops off
+        # Get the cells where 3V3 power is under the threshold
+        rows_under_threshold = df[(col_3v3_power < power_threshold)]
+
+        #If we have some data that meets the criteria
+        if not rows_under_threshold.empty:
+            #Get the index of the first row meeting the threshold
+            first_index = rows_under_threshold.index[0]
+
+            #We check the index is more than 0, and adjust indexing by 1 to account for column names
+            target_index = max(0, first_index - 1)
+
+            #Store the 3V3 voltage when power meets the threshold
+            voltage_3v3_offline = col_3v3_volt.loc[target_index]
+
+            #Store the time when power meets the threshold
+            time_3v3_offline = col_time.loc[target_index]
+
+        else:
+            #If we don't have any rows matching the criteria, we will return None
+            voltage_3v3_offline = None
+            time_3v3_offline = None
+            print(f"Warning: 3V3 power never dropped below 1mW.")
+
+    #Return the timestamp and voltage where we determine the drive dropped off
     return voltage_12v_offline, time_12v_offline, voltage_3v3_offline, time_3v3_offline
 
-def reset_12v(my_ppm):
-    """
-    Clears any pattern and sets 12V channel to 12V
-    :param my_ppm: PPM used in test
-    :return: None
-    """
-    #Clear any previous pattern
-    my_ppm.send_command("SIGnal:12v:PAT CLEAR")
-    #Set 12V to 12000mv (==12V)
-    my_ppm.send_command("SIGnal:12v:VOLTage 12000")
-
-#Creates pattern with 12V on lower limit
-def ramp_12v(my_ppm):
-    """
-    Creates a pattern for 12V to ramp down to 0 over 5000ms
-    :param my_ppm: PPM used in test
-    :return: None
-    """
-    #Pattern to ramp down -12V down to 0 over 5s
-    my_ppm.send_command("SIGnal:12v:PATtern ADD 5s -12000 i")
-
-#Clears any pattern and sets 3V3 channel to 3V3
-def reset_3v3(my_ppm):
-    """
-    Clears any pattern and sets 3V3 channel to 3V3
-    :param my_ppm: PPM used in test
-    :return: None
-    """
-    #Clear any previous pattern
-    my_ppm.send_command("SIGnal:3v3:PAT CLEAR")
-    #Set 3v3 to 3300mV
-    my_ppm.send_command("SIGnal:3v3:VOLTage 3300")
-
-
-#Creates pattern with 3V3 ramping down to 0V
-def ramp_3v3(my_ppm):
-    """
-    Creates a pattern for 3V3 to ramp down to 0 over 5s
-    :param my_ppm: PPM used in test
-    :return: None
-    """
-    reset_3v3(my_ppm)
-    #Ramps down 3V3 to 0V over 5s
-    my_ppm.sendCommand("SIGnal:3v3:PATtern ADD 5s -3300 i")
-
-
-# Standard Python entry point. This ensures the main() function is called when the script is executed.
 if __name__== "__main__":
     main()
