@@ -150,16 +150,18 @@ def main():
 
     #Uncomment this if wanting to hardcode, and comment in section above
     #pam_configs = [{"address": "TCP:10.0.8.95", "filename": "RawDataPam1.csv"},
-                   #{"address": "TCP:10.0.8.59", "filename": "RawDataPam2.csv"},
+                   #{"address": "USB:QTL2312-01-001", "filename": "RawDataPam2.csv"},
                    #{"address": "TCP:10.0.8.107",      "filename": "RawDataPam3.csv"},
-                   #{"address": "TCP:10.0.8.109", "filename": "RawDataPam4.csv"},
+                   #{"address": "USB:QTL3283-01-001", "filename": "RawDataPam4.csv"},
                    #{"address": "TCP:10.0.8.110",      "filename": "RawDataPam5.csv"}]
     #END of stream parameter configuration
 
+    #For each object in pam_configs, get the TCP:QTL2312-01-001, and strip it to just QTL2312
     model_list = [pam["address"].split(":")[-1].split("-")[0] for pam in pam_configs]
-    print(model_list)
+
+    #True if all objects in the list are QTL2312 - allows faster sampling rate
     all_dc_pams = all(model=="QTL2312" for model in model_list)
-    print(all_dc_pams)
+
     if all_dc_pams:
         #This means we can resample at up to 4us. This is the same across both analog and digital channels
         allow_4us_sampling = True
