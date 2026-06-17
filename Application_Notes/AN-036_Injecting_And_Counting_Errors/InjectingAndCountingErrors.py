@@ -292,9 +292,6 @@ def retrain_link(cable_tester, breaker, link_speed, ports=None):
     cable_tester.send_command(f"LINK:SPEED {link_speed}")
     time.sleep(1)
 
-    #TODO REMOVE THIS
-    cable_tester.send_command("CONFig:FAULT:RESet")
-
     #Start running the test
     cable_tester.send_command("RUN:TEST")
 
