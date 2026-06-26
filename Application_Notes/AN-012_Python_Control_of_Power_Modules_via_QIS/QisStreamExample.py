@@ -2,7 +2,7 @@
 AN-012 - Application note demonstrating control of power modules via QIS
 
 Automating via QIS is a lower overhead that running QPS (Quarch Power Studio) in full but still
-provides easy access to data for custom processing.  This example uses quarchpy functions to
+provides easy access to data for custom processing.  This example uses quarchpy functions to 
 stream data from a quarch power module and dump it into a CSV file.
 
 In this example we find and connect to an instrument.  We then record a short period of data
@@ -93,10 +93,10 @@ def main():
 
     # Connect to the module, we request a QIS type connection
     my_quarch_device = getQuarchDevice(my_device_id, ConType = "QIS")
-
+   
     # Convert the base device class to a power device, which provides additional controls, such as data streaming
     my_power_device = quarchPPM(my_quarch_device)
-
+    
     # Now we will run an example function to capture stream data from this devices
     simple_stream_example (my_power_device)
 
@@ -131,10 +131,10 @@ def simple_stream_example(module: quarchPPM) -> None:
     module.startStream('Stream-1ms.csv')
 
     # Delay for a few seconds while the stream is running.  You can also continue
-    # to run your own commands/scripts here while the stream is recording in the background
+    # to run your own commands/scripts here while the stream is recording in the background  
     print ("\nWait a while, for a period of data to record\n")
     visual_sleep(10, title="1mS Stream test")    # Gives you a visual indication of the delay time
-
+    
     # Check the stream status, so we know if anything went wrong during the capture period
     # This is not essential, but some tests may need you to ensure that all data across the
     # full stream period has been captured correctly
