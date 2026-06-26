@@ -28,8 +28,6 @@ This example uses IOMeter and QPS to run traffic tests to a drive, with the powe
     https://pypi.org/project/WMI/
 6- Install pywin32 package from pypi (Windows only)
     https://pypi.org/project/pywin32/
-7- Java 8, with JaxaFX
-    https://quarch.com/support/faqs/java/
 
 ########### INSTRUCTIONS ###########
 

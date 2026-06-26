@@ -17,8 +17,6 @@ This example demonstrates the creation of a complex ripple pattern on an HD PPM
     https://quarch.com/downloads/driver/
 4- Check USB permissions if using Linux:
     https://quarch.com/support/faqs/usb/
-5- Java 8 that support JavaFX (Quarch recommends Corretto Java 8)
-    https://docs.aws.amazon.com/corretto/latest/corretto-8-ug/downloads-list.html
 
 ########### INSTRUCTIONS ###########
 

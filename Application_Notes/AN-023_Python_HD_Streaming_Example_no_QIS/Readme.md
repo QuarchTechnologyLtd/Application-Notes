@@ -3,6 +3,11 @@
 ## Overview
 This application note demonstrates basic automation with Quarch Power Modules using Python without the Quarch Instrument Server (QIS). The example scripts show how to record data at a high rate and post-process it to lower rates, ending with 100uS and 500uS sample rates.
 
+## Note
+This is NOT a recommended automation path and the preferred way is to use the Quarch Instrument Server (QIS) to perform the low-level streaming, as illustrated in [AN-012](https://github.com/QuarchTechnologyLtd/Application-Notes/tree/main/Application_Notes/AN-012_Python_Control_of_Power_Modules_via_QIS).
+
+This script was created for lower host overhead for specific test cases where measurement latency is very sensitive to other software running and it is not possible to run the power collection on a different host, which would be a better solution.
+
 ## Features
 - Scanning for Quarch modules via TCP
 - Connecting to a Quarch module

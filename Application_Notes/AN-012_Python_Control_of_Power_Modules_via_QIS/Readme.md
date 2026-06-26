@@ -19,8 +19,6 @@ This application note demonstrates the control of Quarch Power Modules via QIS (
 ### Software
 - Python (3.x recommended)
   - [Download Python](https://www.python.org/downloads/)
-- Java 8, with JavaFX
-  - [Java 8 with JavaFX](https://quarch.com/support/faqs/java/)
 - Quarchpy Python package
   - [Quarchpy Python Package](https://quarch.com/products/quarchpy-python-package/)
 - Quarch USB driver (Required for USB-connected devices on Windows only)

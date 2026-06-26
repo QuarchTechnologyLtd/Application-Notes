@@ -3,9 +3,9 @@
 This example demonstrates basic automation with QIS and post processing of raw data after recording.
 We will record at a high rate and post process down to a lower rate, ending with 100uS and 500uS sample rates
 
-########### VERSION HISTORY ###########
+########### VERSION HISTORY ########
 
-03/10/2019 - Andy Norrie     - First Version
+03/10/2019 - Andy Norrie - First Version
 
 ########### INSTRUCTIONS ###########
 
@@ -13,8 +13,22 @@ We will record at a high rate and post process down to a lower rate, ending with
 2- Ensure quarcypy is installed
 3- Set the text ID of the PPM you want to connect to in myDeviceID
 
+####################################
+
+
+########### NOTE ###################
+
+This is NOT a recommended automation path and the preferred way is to use the Quarch Instrument Server (QIS)
+to perform the low-level streaming, as illustrated in AN-012:
+
+https://github.com/QuarchTechnologyLtd/Application-Notes/tree/main/Application_Notes/AN-012_Python_Control_of_Power_Modules_via_QIS
+
+This script was created for lower host overhead for specific test cases where measurement latency is very sensitive
+to other software running and it is not possible to run the power collection on a different host, which would be a
+better solution.
 
 ####################################
+
 '''
 
 
@@ -25,7 +39,7 @@ import time
 
 import pandas as pd
 import quarchpy
-from intel_custom import HdStreamer
+from custom_streamer import HdStreamer
 from quarchpy.device import *
 
 # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
