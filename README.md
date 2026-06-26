@@ -36,6 +36,8 @@ Each application note covers a specific topic, and includes code samples, config
 | **AN-031:** QIS AC PAM Example | [View Folder](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/tree/main/Application_Notes/AN-031_QIS_AC_PAM_Example) | [Download Zip](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/releases/latest/download/AN-031_QIS_AC_PAM_Example.zip) |
 | **AN-032:** Multi-Device Power Streaming | [View Folder](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/tree/main/Application_Notes/AN-032_Multi_Device_Power_Streaming) | [Download Zip](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/releases/latest/download/AN-032_Multi_Device_Power_Streaming.zip) |
 | **AN-033:** Multi-Device QPS Streaming | [View Folder](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/tree/main/Application_Notes/AN-033_Multi_Device_QPS_Streaming) | [Download Zip](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/releases/latest/download/AN-033_Multi_Device_QPS_Streaming.zip) |
+| **AN-034:** Multi-Device QIS Sync Streaming | [View Folder](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/tree/main/Application_Notes/AN-034_Multi_AC_PAM_Streaming) | [Download Zip](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/releases/latest/download/AN-034_Multi_AC_PAM_Streaming.zip) |
+| **AN-035:** RefClk Delay from ClkReq# | [View Folder](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/tree/main/Application_Notes/AN-035_RefClk_Delay_From_ClkReq) | [Download Zip](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/releases/latest/download/AN-035_RefClk_Delay_From_ClkReq.zip) |
 
 ## Usage
 
@@ -57,4 +59,4 @@ See [LICENSE.txt](https://github.com/QuarchTechnologyLtd/quarchpy-appnotes/blob/
 
 ---
 
-Quarch Technology Ltd © 2025
+Quarch Technology Ltd © 2026
