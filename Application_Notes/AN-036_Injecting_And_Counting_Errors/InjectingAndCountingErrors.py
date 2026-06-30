@@ -1,25 +1,48 @@
-"""Using a QSFP cable tester and a QSFP breaker, we will inject glitches and count the BER
-We loop over link speed, number of lanes glitched, and glitched length.
+"""
+AN-036 - Application note demonstrating fault injection and error counting
 
-Steps:
-Change the cable mapping dependent on your cable used, and optionally reduce the link speed if this is too great for the cable
+This example injects glitches with a breaker and counts the errors with a cable tester. QSFP28 was used in testing, but should work for any form factors we have modules for.
+Using a QSFP28 cable tester (QTL2250) and a QSFP28 breaker (QTL2171), we will inject glitches and count the BER
+We loop over link speed, number of lanes glitched, and glitched length. This will output a CSV containing the recorded data, which can be used for estimating the errors at faster speeds
+
+########### VERSION HISTORY ###########
+25/06/2026 - Andrew Steedman  - First Version.
+
+########### REQUIREMENTS ###########
+1- Python (3.x recommended)
+    https://www.python.org/downloads/
+2- Quarchpy python package
+    https://quarch.com/products/quarchpy-python-package/
+3- Quarch USB driver (Required for USB connected devices on Windows only)
+    https://quarch.com/downloads/driver/
+4- Check USB permissions if using Linux:
+    https://quarch.com/support/faqs/usb/
+
+########### INSTRUCTIONS ###########
+Change the cable mapping dependent on your cable used, and optionally reduce the link speed depending on the cable you are using
 Connect the cable and the breaker to the cable tester, then connect the breaker and cable tester via USB or LAN to this PC
 Run the script, which will generate a CSV with the data.
+
+1- Check the cable mapping of your cable
+2- Connect the cable and the breaker to the cable tester
+3- Connect the cable tester and breaker to the PC via LAN or USB
+4- Run the script and follow the instructions on screen.
 """
-import time
+import time #Used for timing
+import pandas as pd #We save the data into a CSV for easy further analysis
 
 import quarchpy
 from quarchpy.debug.versionCompare import requiredQuarchpyVersion
 from quarchpy.device import *
-from quarchpy.user_interface import displayTable, visual_sleep
-import pandas as pd
+from quarchpy.user_interface import displayTable, visual_sleep, showYesNoDialog
+
 
 #Tester map - Change this for different cables, and whether the breaker is plugged into A side or B side
 lanes_to_test = [
-    {"tx_pair": "TX1", "tester_port": "B1"},
-    {"tx_pair": "TX2", "tester_port": "B3"},
-    {"tx_pair": "TX3", "tester_port": "B0"},
-    {"tx_pair": "TX4", "tester_port": "B2"}]
+    {"tx_pair": "TX1", "tester_port": "A3"},
+    {"tx_pair": "TX2", "tester_port": "A1"},
+    {"tx_pair": "TX3", "tester_port": "A2"},
+    {"tx_pair": "TX4", "tester_port": "A0"}]
 
 # Length of time to sleep for, and length of time for PRBS - If this is too short this can misrepresent the true number of errors so suggested to keep at 5
 test_length = 10
@@ -35,6 +58,13 @@ actual_glitch_lengths = ["100ns", "1us", "10us", "100us", "1ms", "10ms", "100ms"
 timed_glitch_count = sum(1 for glitch in glitch_lengths_breaker if "SETup" in glitch)
 
 def main():
+    # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
+    # # at the same level the python default logger. To get python logs and quarchpy logs in console comment in this line:
+    # logging.basicConfig(level=logging.DEBUG)
+    # # To control specifically the quarchpy console log level use the following line:
+    # quarchpy.configure_logging(console_level=logging.DEBUG) # you need "import quarchpy"
+    # # Use a combination of the 2 if you want only python logs with no quarchpy logs or vice versa.
+
     displayTable("AN-036 Injecting Glitches with a Cable Tester", printToConsole=True, align="c")
 
     print("\nInsert the breaker to the A port of the cable tester")
@@ -43,13 +73,14 @@ def main():
     # Check we are on a recent version of quarchpy
     requiredQuarchpyVersion("2.2.21")
 
-    # #Scans devices
-    # device_list = scanDevices()
-    # #Displays devices along with rescan, quit, all conn types
-    # breaker_str = userSelectDevice(device_list, additionalOptions = ["Rescan", "All Conn Types", "Quit"], nice=True)
+    #Scans devices
+    device_list = scanDevices()
+    print("Please select the breaker to be used")
+    #Displays devices along with rescan, quit, all conn types
+    breaker_str = userSelectDevice(device_list, additionalOptions = ["Rescan", "All Conn Types", "Quit"], nice=True)
 
     #Optional hardcode
-    breaker_str = "USB::QTL2171-02-041"
+    #breaker_str = "USB::QTL2171-02-041"
 
     #Create a quarch_device
     breaker = get_quarch_device(breaker_str)
@@ -57,26 +88,27 @@ def main():
     breaker.send_command("CONFig:DEFault STATE")
     print(f"Connected to :\n{breaker.send_command('*idn?')}\n")
 
-    # #Scans devices
-    # device_list = scanDevices()
-    # #Displays devices along with rescan, quit, all conn types
-    # cable_tester_str = userSelectDevice(device_list, additionalOptions = ["Rescan", "All Conn Types", "Quit"], nice=True)
+    #Scans devices
+    device_list = scanDevices()
+    #Displays devices along with rescan, quit, all conn types
+    print("Please select the Cable Tester")
+    cable_tester_str = userSelectDevice(device_list, additionalOptions = ["Rescan", "All Conn Types", "Quit"], nice=True)
 
     #Optional hardcode
-    cable_tester_str = "USB::QTL2250-01-014"
+    #cable_tester_str = "USB::QTL2250-01-014"
 
     #Connect to the cable tester
     cable_tester = get_quarch_device(cable_tester_str)
     print(f"Connected to :\n{cable_tester.send_command('*idn?')}\n")
 
     # We will be glitching 1 lane, 2 lanes and all 4 lanes
-    test_groupings = {
+    lane_widths = {
         "1 Lane": lanes_to_test[:1],
         "2 Lanes": lanes_to_test[:2],
         "4 Lanes": lanes_to_test[:4]}
 
     # Equivalent of PCIe Gen4.5 (fastest we can run), Gen4 and Gen3
-    link_speeds = ["24G", "16G", "8G"]
+    link_speeds = ["24G","16G","8G"]
 
     #Empty list to store results in
     results_list = []
@@ -86,35 +118,36 @@ def main():
     filename = f"lane_glitch_results_{timestamp}.csv"
     print(f"Results will be saved to: {filename}\n")
 
+    ports = ["A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3"]
+    for port in ports:
+        cable_tester.send_command(f"LINK:{port} PAT PRBS31")
+
     #For each link speed we have set
     for link_speed in link_speeds:
-        print(f"SETTING UP LINK FOR {link_speed}")
+        print(f"Setting up link at {link_speed}")
 
         # Stop any pre-running glitches and set link speed before initial training
         breaker.send_command("RUN:GLITch STOP")
         cable_tester.send_command(f"LINK:SPEED {link_speed}")
 
+        #Retrain the link
         retrain_link(cable_tester, breaker, link_speed)
 
         print(f"Link speed successfully set to: {cable_tester.send_command('LINK:SPEED?')}")
         time.sleep(2)
 
         #We will loop over each combination of 1 lane, 2 lane, 4 lane
-        for group_name, active_lanes in test_groupings.items():
-            #Get the TX pair for the breaker, and the tester port
+        for lane_count, active_lanes in lane_widths.items():
+            #Get the TX pair for the breaker, and the tester port a0 etc
             active_tx_pairs = [lane["tx_pair"] for lane in active_lanes]
             active_tester_ports = [lane["tester_port"] for lane in active_lanes]
 
-            print(f"\nSTARTING {group_name.upper()} TEST AT {link_speed}")
-            print(f"Glitching TX: {', '.join(active_tx_pairs)}")
-            print(f"Checking Ports: {', '.join(active_tester_ports)}")
+            print(f"\nStarting {lane_count} test at {link_speed}")
 
-            #Check that all lanes are not able to glitch
+            #Disable glitches on all lanes to start
             for pair in ["TX1", "TX2", "TX3", "TX4"]:
                 breaker.send_command(f"SIGnal:{pair}_pl:GLITch:ENAble OFF")
                 breaker.send_command(f"SIGnal:{pair}_mn:GLITch:ENAble OFF")
-
-            time.sleep(1)
 
             #For the pairs we are glitching, enable glitching for both pl and mn
             for tx_pair in active_tx_pairs:
@@ -125,26 +158,22 @@ def main():
             for port in active_tester_ports:
                 cable_tester.send_command(f"BERT:{port}:ENAble ON")
 
-            #Reset the BERT for all link lanes
-            reset_all_berts(cable_tester)
+            #Reset the BER counters for all link lanes
+            reset_all_ber(cable_tester)
             time.sleep(1)
 
             #For each glitch length and actual glitch, glitched together, get an index as well
             for i, (glitch_length, actual_glitch) in enumerate(zip(glitch_lengths_breaker, actual_glitch_lengths)):
-                #Reset the error counts to 0 as a precaution
-                errors_before = 0
-                errors_after = 0
-
                 #Get a timestamp for the start of the test
                 start_time = time.time()
 
                 #Set the glitch length, or the PRBS ratio
                 breaker.send_command(f"GLITch:{glitch_length}")
                 #Reset the BERT counter
-                reset_all_berts(cable_tester)
+                reset_all_ber(cable_tester)
 
-                #Sleep for 2 seconds to allow BERTs to count up if there is a dodgy link
-                time.sleep(2)
+                #Sleep for 3 seconds to allow BERTs to count up if there is a dodgy link
+                time.sleep(3)
 
                 #Get error count before we start glitching
                 errors_before = get_total_errors(cable_tester, active_tester_ports)
@@ -157,11 +186,12 @@ def main():
 
                 if errors_before != "LINK_DEAD" and errors_before > 0:
                     # Reset the BERT counter
-                    reset_all_berts(cable_tester)
+                    reset_all_ber(cable_tester)
                     errors_before = 0
                     time.sleep(1)
 
                 #Run the glitch
+                time.sleep(1)
                 run_glitch(breaker, i)
 
                 #Sleep for 1 second to give time before we count the glitches
@@ -181,6 +211,9 @@ def main():
                         print(f"\n{actual_glitch} glitch crashed the link. Recovering for next test...")
                         retrain_link(cable_tester, breaker, link_speed, active_tester_ports)
 
+                        cable_tester.send_command("EYE:A0:TEST")
+                        time.sleep(1)
+
                         run_glitch(breaker, i)
 
                         attempts += 1
@@ -190,35 +223,34 @@ def main():
                     errors = errors_after - errors_before
 
                     #Assuming we have some errors, we display a message and move on to the next loop
-                    if errors > 0:
+                    #Check whether its more than 500, as a non-functioning tests return low error counts
+                    if errors > 200:
                         print(f"\n{actual_glitch} glitch across {len(active_tx_pairs)} lane(s) at {link_speed} caused {errors} total errors")
                         final_error_count = errors
                         break
-                    #If we haven't detected any errors, try again
-                    else:
 
+                    #If we haven't detected any errors above the threshold, try again
+                    else:
                         #If on the last attempt we still don't have any glitches, we print a message and exit this loop
                         if attempts == (attempts_allowed - 1):
                             print(f"Glitch {actual_glitch} caused no detectable errors after {attempts_allowed} attempts")
                             break
                         else:
-                            #If we can't detect errors from the glitch run earlier, run it again
+                            #If we can't detect errors from the glitch run earlier, run it again and increment attempts
                             print(f"No errors detected for {actual_glitch}, retrying")
                             run_glitch(breaker, i)
-
                             attempts += 1
                             continue
 
                 #Get a timestamp for the end, and store how long each test took in test_duration
+                #Can be used to calculate BER
                 end_time = time.time()
                 test_duration = end_time - start_time
 
                 # Append data to the flat list
                 results_list.append({
-                    "Test_Configuration": group_name,
+                    "Test_Configuration": lane_count,
                     "Active_Lane_Count": len(active_tx_pairs),
-                    "Active_Breaker_TX": "+".join(active_tx_pairs),
-                    "Active_Tester_Ports": "+".join(active_tester_ports),
                     "Link_Speed": link_speed,
                     "Glitch_Length": actual_glitch,
                     "Total_Errors": final_error_count,
@@ -229,17 +261,17 @@ def main():
                 df_results = pd.DataFrame(results_list)
                 df_results.to_csv(filename, index=False)
 
-
-                #After the data has been successfully stored, reset BERT counters
-                reset_all_berts(cable_tester)
                 #Sleep for 2 seconds between each glitch length, to keep the link up
                 time.sleep(2)
 
-            print(f"Glitches at {link_speed} complete for {group_name}")
+            print(f"Glitches at {link_speed} complete for {lane_count}")
+
+    cable_tester.send_command("RUN:STOP")
 
     #Set breaker and cable tester to default state
     breaker.send_command("CONFig:DEFault STATE")
     cable_tester.send_command("CONFig:DEFault STATE")
+
     #Close connections
     breaker.close_connection()
     cable_tester.close_connection()
@@ -250,8 +282,15 @@ def main():
 
 # Get errors across all ports
 def get_total_errors(cable_tester, ports):
+    """
+    Count the errors for the ports we are actively testing
+
+    :param cable_tester: cable tester
+    :param ports: ports we are actively testing
+    :return: total error count, or an error message
+    """
     total = 0
-    #For all 4 ports we have
+    #For the ports we have
     for p in ports:
         #Query the errors
         response = cable_tester.send_command(f"BERT:{p}:ERRors?")
@@ -264,7 +303,7 @@ def get_total_errors(cable_tester, ports):
             return "LINK_DEAD"
     return total
 
-def reset_all_berts(cable_tester):
+def reset_all_ber(cable_tester):
     """
     Reset all BERT counters to 0
     :param cable_tester: cable tester
@@ -297,12 +336,12 @@ def retrain_link(cable_tester, breaker, link_speed, ports=None):
 
     print("Checking cable state...")
 
-    #Query the test state, and poll it until we pass the test
+    #Query the test state, and poll it until we get complete
     response = cable_tester.send_command("RUN:INT?")
+    print(f"Current cable status: {response} waiting for COMPLETE")
     while "COMPLETE" not in response:
         #Query the interrupt flags
         response = cable_tester.send_command("RUN:INT?")
-
         #Sleep so we don't poll too fast
         time.sleep(1)
 
