@@ -8,15 +8,15 @@ We then save the errors counted in a CSV
 
 ## Features
 This app note uses the quarchpy python package and demonstrates
--Automating manual testing
--Script control of cable tester, and breaker
+- Automating manual testing
+- Script control of cable tester, and breaker
 
 ## Requirements
--Control PC running Windows or Linux, with Python installed
+- Control PC running Windows or Linux, with Python installed
 
 ### Hardware
--Cable tester (QTL2250), breaker (QTL2171) and cable all in the same form factor (QSFP28 was used in testing)
--Modules connected to the control PC
+- Cable tester (QTL2250), breaker (QTL2171) and cable all in the same form factor (QSFP28 was used in testing)
+- Modules connected to the control PC
 
 ### Software
 - Python (3.x recommended)
