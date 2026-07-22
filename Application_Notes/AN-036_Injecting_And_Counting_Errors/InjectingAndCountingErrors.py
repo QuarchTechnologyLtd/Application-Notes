@@ -69,6 +69,9 @@ def main():
     print("\nInsert the breaker to the A port of the cable tester")
     print("Then insert the cable into to the breaker on the A side, and into the cable tester on the B side\n")
 
+    # Check we are on a recent version of quarchpy
+    requiredQuarchpyVersion("2.2.21")
+    
     #Display the current mapping
     print("\nDefault cable mapping is set as ")
     for lane in lanes_to_test:
@@ -97,9 +100,6 @@ def main():
             tx = lane["tx_pair"]
             port = lane["tester_port"]
             print(f"TX pair {tx} is connected to Port {port} on the tester")
-
-    # Check we are on a recent version of quarchpy
-    requiredQuarchpyVersion("2.2.21")
 
     #Scans devices
     device_list = scanDevices()
