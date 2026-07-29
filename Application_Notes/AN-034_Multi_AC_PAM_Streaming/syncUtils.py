@@ -86,6 +86,7 @@ def csv_combiner(file_list, timestamp, trigger_times_ns):
     print(f"CSV can be found :{path}")
     return path
 
+
 def view_csv_in_qps(pam_address:str, stream_length, timestamp, file_list, trigger_times_ns, qps_instance: QpsInterface = None):
     """
     Calls the function to merge the CSVs together
@@ -101,8 +102,12 @@ def view_csv_in_qps(pam_address:str, stream_length, timestamp, file_list, trigge
 
     Returns: csv_path - the path of the CSVs
     """
-    #Calls the function to combine the CSVs
-    csv_path = csv_combiner(file_list, timestamp, trigger_times_ns)
+    #Combined CSV files into comma-separated list
+    csv_path = ''
+    for csv_file_index, csv_file in enumerate(file_list):
+        csv_path += os.path.abspath(csv_file)
+        if csv_file_index != len(file_list) -1:
+            csv_path += ','
 
     #If QPS is not already running (passed in), launch it
     if qps_instance is None:
@@ -117,8 +122,8 @@ def view_csv_in_qps(pam_address:str, stream_length, timestamp, file_list, trigge
 
     print("Converting CSV file to QPS")
 
-    #Formulates QPS command to convert CSV to QPS recording
-    command = f'$convert csv from="{csv_path}" to="{file_path}"'
+    #Formulates QPS command to convert CSV to QPS recording, using a prefix of D for "Device" indicating device 1, device 2, etc
+    command = f'$convert csv from="{csv_path}" to="{file_path}" prefix="D"'
     #Sends the command
     qps_instance.sendCommand(command)
 
