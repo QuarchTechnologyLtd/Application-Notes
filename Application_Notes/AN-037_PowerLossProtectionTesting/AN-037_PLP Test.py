@@ -23,11 +23,6 @@ def main():
 
     requiredQuarchpyVersion("2.2.19")
 
-    #Time to ramp over
-    ramp_time = 5
-    #Time we wait in between margining the rails for the drive to come back online
-    power_up_time = 5
-
     print("Quarch application note example: AN-014 Triggering")
     print("---------------------------------------\n\n")
 
@@ -93,14 +88,24 @@ def main():
 
     #Test 1 - ramp around the threshold
     #Find the threshold of a brownout on both rails by margining each rail individually down to 0V over 5 seconds
+    #This has it's own separate stream because we need to export to CSV to find the threshold
     brownout_12v, brownout_3v3 = voltage_margin(my_ppm, 5000, 5000)
 
     #Now we have the thresholds, wait 5 seconds
     time.sleep(5)
 
+    #Create stream path in a folder called Threshold_Ramp_Test
+    stream_path = os.path.join(os.getcwd(), "Main_PLP_Tests")
+    #Get timestamp in YYMMDD-HHMMSS
+    timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
+    #Start stream and join the filepaths
+    my_stream = my_ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
+
     #Now we have the threshold
+    ramp_at_brownout_threshold(my_ppm, my_stream, brownout_12v, brownout_3v3)
 
-
+    #Stop stream
+    my_stream.stop_stream()
 
     # Exit cleanly, close the PPM connection and QPS
     my_ppm.close_connection()
@@ -109,7 +114,7 @@ def main():
     #Exit the script
     sys.exit(0)
 
-def ramp_at_brownout_threshold(ppm, brownout_threshold_12v, brownout_threshold_3v3):
+def ramp_at_brownout_threshold(ppm, stream, brownout_threshold_12v, brownout_threshold_3v3):
     """
     We will use the PPM's patterns feature to ramp the voltage around the brownout threshold
     """
@@ -121,35 +126,112 @@ def ramp_at_brownout_threshold(ppm, brownout_threshold_12v, brownout_threshold_3
     # Set rails to nominal
     ppm.send_command("SIGnal:12v:VOLTage 12000")
     ppm.send_command("SIGnal:3v3:VOLTage 3300")
+    #Enable the pulldowns so the voltage can fall much faster
+    ppm.send_command(f"CONFig:OUTput:12V:PULLdown ON")
+    ppm.send_command(f"CONFig:OUTput:3V3:PULLdown ON")
 
-    #Create stream path in a folder called Threshold_Ramp_Test
-    stream_path = os.path.join(os.getcwd(), "Threshold_Ramp_Test")
-    #Get timestamp in YYMMDD-HHMMSS
-    timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
-    #Start stream and join the filepaths
-    my_stream = ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
+    #Sleep for 1 second before we start creating the pattern
+    time.sleep(1)
 
-    #Starting value is 12V.
-    #For example, say that brownout level 8V - We want to set voltage to 1V above threshold (9V), which in the pattern means a point of -3V
-    # 12V - (brownout level - 1V) = 12V - (8V - 1V) = -3V
-    ppm.send_command(f"SIGnal:12V:PAT ADD 20ms -{brownout_threshold_12v - 1000} i")
-    #Pause for 5ms after we go to threshold + 1
-    ppm.send_command(f"SIGnal:12V:PAT ADD 25ms 0 i")
-    #Ramp to threshold -1V over 25ms
-    ppm.send_command(f"SIGnal:12V:PAT ADD 50ms -{brownout_threshold_3v3 + 1000} i")
-    #Expect PLP to have kicked in now. Wait 1 second before we reset the rail to 0 and then to 12V
-    ppm.send_command(f"SIGnal:12V:PAT ADD 1s ")
+    #Configure the variables to create a 12V pattern
+    #TODO - change these variables to be configurable
+    threshold_jump_above_12v = 1000
+    threshold_jump_below_12v = 500
+    timing_array_12v = ["20ms", "25ms", "50ms", "75ms", "575ms"]
+    create_pattern_around_threshold(ppm, "12V", brownout_threshold_12v, threshold_jump_above_12v, threshold_jump_below_12v, timing_array_12v)
+
+    #Checks if we have found brownout_threshold_3v3. If we've found brownout_threshold on 3V3 this will be non-zero
+    if brownout_threshold_3v3 != 0:
+        threshold_jump_above_3v3 = 400
+        threshold_jump_below_3v3 = 200
+        timing_array_3v3 = ["20ms", "25ms", "50ms", "75ms", "375ms"]
+        create_pattern_around_threshold(ppm, "3V3", brownout_threshold_3v3, threshold_jump_above_3v3, threshold_jump_below_3v3, timing_array_3v3)
+
+    #Create the annotation
+    #TODO - remove response and print
+    response = stream.add_annotation(title="Starting to ramp around the brownout threshold")
+    print(f"Add annotation response: {response}")
+
+    ppm.send_command("RUN:PATtern")
+
+    #TODO - sleep after starting the pattern
 
 
 
-    #Stop stream
-    my_stream.stop_stream()
+def create_pattern_around_threshold(ppm, rail, brownout_threshold, threshold_jump_above, threshold_jump_below, timing_array):
+    """
+    This is designed to ramp on a PPM. We want to ramp around the drive's brownout threshold. All steps are configurable
+
+    The steps are designed as below
+    1. We start at nominal voltage
+    2. timing_array[0] seconds later, ramp down to brownout_threshold + threshold_jump
+    3. Stay at (brownout_threshold + threshold_jump) for timing_array[1] seconds
+    4. Ramp down to brownout_threshold timing_array[2] seconds after that
+    5. Ramp down to (brownout_threshold - threshold_jump) for timing_array[3] seconds - expect PLP to have kicked in
+    6. Pause for timing_array[4] seconds
+    7. Reset the rail to nominal
+
+    For example. 12V rail, 8V is the brownout threshold, and we want to jump around 1V. timing_array = [20ms, 25ms, 50ms, 75ms, 575ms]
+    1. Start at 12V
+    2. 20ms later, ramp down to 9V
+    3. Stay at 9V for a further 5ms (25ms total)
+    4. Ramp down to 8V over 25ms (50ms total)
+    5. Ramp down to 7V over 25ms (75ms total)
+    6. Pause for 500ms at 7V
+    7. 575ms after the start of the pattern, reset the 12V rail
+
+    Args:
+        ppm: The PPM to be used in test
+        rail: Which voltage rail to margin
+        brownout_threshold: The brownout threshold in mV
+        threshold_jump_above: What level above brownout_threshold to jump
+        threshold_jump_below: What level below brownout_threshold to jump
+        timing_array: Array of timings in the format [Ams, Bms, Cms, Dms, Es]
+    """
+    if rail.upper() == "12V":
+        nominal_voltage = 12000
+    elif rail.upper() == "3V3":
+        nominal_voltage = 3300
+    elif rail.upper() == "3V3_AUX":
+        nominal_voltage = 3300
+    else:
+        print("Rail not recognised")
+        nominal_voltage = None
+
+    #Step 2
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[0]} -{nominal_voltage - brownout_threshold + threshold_jump_above} i")
+    #Step 3
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[1]} -{nominal_voltage - brownout_threshold + threshold_jump_above}")
+    #Step 4
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[2]} -{nominal_voltage - brownout_threshold} i")
+    #Step 5
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[3]} -{nominal_voltage - brownout_threshold - threshold_jump_below} i")
+    #Step 6
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[4]}  -{nominal_voltage - brownout_threshold - threshold_jump_below}")
+    #Step 7
+    ppm.send_command(f"SIGnal:{rail}:PATtern ADD {timing_array[4]} {nominal_voltage} i")
+
+    #TODO - remove debug
+    print(ppm.send_command("SIGnal:12V:PATtern DUMP?"))
+    print(ppm.send_command("SIGnal:3V3:PATtern DUMP?"))
+
+    #Once we've made the pattern, sleep for 1 second before we run the pattern to ensure its set
+    time.sleep(1)
 
 
 def voltage_margin(ppm,  ramp_time_12v, ramp_time_3v3):
     """
-    This function is to perform voltage margining to cause a brownout.
-    Also calls function to identify where the brownout threshold is
+    This is essentially App Note 14 Voltage Margining. This function has its own stream because we need to export to CSV which can't be done real-time
+    We export to CSV to find where the brownout threshold is.
+
+    Parameters:
+        ppm: The PPM to be used in test
+        ramp_time_12v: The ramp_time_12v to be used in test
+        ramp_time_3v3: The ramp_time_3v3 to be used in test
+
+    Returns:
+        brownout_12V: Brownout threshold for 12V rail
+        brownout_3V3: Brownout threshold for 3V3 rail
     """
     #Sets the voltage channels to nominal, and clear any previous pattern
     # Clear any previous pattern
@@ -159,8 +241,8 @@ def voltage_margin(ppm,  ramp_time_12v, ramp_time_3v3):
     ppm.send_command("SIGnal:12v:VOLTage 12000")
     ppm.send_command("SIGnal:3v3:VOLTage 3300")
 
-    #Create stream path in a folder called Brownout_Test
-    stream_path = os.path.join(os.getcwd(), "Brownout_Test")
+    #Create stream path in a folder called Identify_Brownout_Level
+    stream_path = os.path.join(os.getcwd(), "Identify_Brownout_Level")
     #Get timestamp in YYMMDD-HHMMSS
     timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
     #Start stream and join the filepaths
@@ -182,7 +264,7 @@ def voltage_margin(ppm,  ramp_time_12v, ramp_time_3v3):
     my_stream.stop_stream()
 
     #Create the path of the CSV
-    csv_path = os.path.join(os.getcwd(), "stream_data.csv")
+    csv_path = os.path.join(os.getcwd(), "identify_brownout_level.csv")
 
     #Save stream data to the path we've just made
     my_stream.save_csv(csv_path)
@@ -193,6 +275,12 @@ def voltage_margin(ppm,  ramp_time_12v, ramp_time_3v3):
     return brownout_12v, brownout_3v3
 
 def margin_12v_function(ppm, ramp_time):
+    """
+    Margin 12V down to 0V over ramp_time seconds
+    Parameters:
+        ppm: The PPM to be used in test
+        ramp_time: The ramp_time to be used in test
+    """
     print("Margining 12V rail")
 
     # Load 12V Pattern
@@ -216,6 +304,12 @@ def margin_12v_function(ppm, ramp_time):
     time.sleep(1)
 
 def margin_3v3_function(ppm, ramp_time):
+    """
+    Margin 12V down to 0V over ramp_time seconds
+    Parameters:
+        ppm: The PPM to be used in test
+        ramp_time: The ramp_time to be used in test
+    """
     print("Margining 3V3 rail")
 
     # Load the 3V3 pattern
@@ -239,31 +333,12 @@ def margin_3v3_function(ppm, ramp_time):
     # We wait 1 second to ensure the PPM has reset
     time.sleep(1)
 
-def margin_both_rails(ppm, ramp_time_12v, ramp_time_3v3, reset_time):
-    print("Margining both rails")
-    #Load the pattern for both 12V and 3V3
-    ppm.send_command(f"SIGnal:12v:PATtern ADD {ramp_time_12v}s -12000 i")
-    ppm.sendCommand(f"SIGnal:3v3:PATtern ADD {ramp_time_3v3}s -3300 i")
-
-    time.sleep(1)
-
-    ppm.send_command("RUN:PATtern")
-
-    #Sleep for the higher of ramp_time + 2 seconds
-    visual_sleep(max(ramp_time_12v,ramp_time_3v3) + 2)
-
-    #Clear patterns
-    ppm.send_command("SIGnal:12v:PAT CLEAR")
-    ppm.send_command("SIGnal:3v3:PAT CLEAR")
-
-    #Set rails back to nominal
-    ppm.send_command("SIGnal:12v:VOLTage 12000")
-    ppm.send_command("SIGnal:3v3:VOLTage 3300")
-
-    # We wait 1 second to ensure the PPM has reset
-    time.sleep(1)
-
 def find_brownout_voltage(csv_path):
+    """Finds the voltage where the power rail reaches 0
+    Parameters: CSV path of stream data
+    Returns:
+        brownout_12v, brownout_3v3: Brownout levels as integer millivolt values
+    """
     # Open the CSV as a pandas dataframe
     df = pd.read_csv(csv_path)
 
