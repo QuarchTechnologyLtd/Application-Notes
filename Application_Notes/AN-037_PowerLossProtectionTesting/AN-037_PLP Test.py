@@ -2,6 +2,8 @@
 import os
 import time     # Used for sleep commands to add delays
 import logging  # Optionally used to create a log to help with debugging
+import tkinter  #Used for filepath selection for FIO loads
+from tkinter import filedialog
 
 # Import the necessary components from the quarchpy library
 import quarchpy
@@ -16,6 +18,8 @@ import pandas as pd #Used for finding when the drive drops off
 # This is how long we will wait for a drive to come back online after a test before we move on to the next test
 # For NVMe drives this could probably be reduced, but to maximise compatibility default to 10 seconds
 drive_reset_time = 10
+#Length of the workloads
+fio_write_time = "10"
 
 # Store slew rates for crowbar testing here. Slew rates passed into the function are expected to be decimal values between 0 and 1.
 # For ease of reading, we will store as *1000 so need to divide by 1000 before passing in. In effect, stored as mV/us which equals V/ms
@@ -24,6 +28,13 @@ crowbar_slew_rates = [
     [100, 300],
     [700, 200],
     [1000, 1000]]
+
+# We use TK for the directory selection box, this code avoids additional TK GUI items being shown
+root = tkinter.Tk()
+tkFileDialog = filedialog
+root.withdraw()
+
+
 
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
@@ -99,6 +110,21 @@ def main():
     #Change the resampling rate to 4us - fastest we can sample on regular HD-PPM. For a MegaPPM, can change this to 1us
     my_ppm.send_command("stream mode resample 4us")
 
+    print("\n>>> Select a folder for FIO Data:")
+    # Request user to select the folder to use for FIO data
+    try:
+        testDirectory = tkFileDialog.askdirectory()
+    except:
+        testDirectory = input("Failed to open folder dialog, the enter the folder path for FIO to access\n>")
+
+    if testDirectory == "":
+        raise Exception("No directory selected")
+    print("Selected : " + testDirectory)
+
+    # FIO needs colons escaped when passing "directory" or "filename" look at FIO documentation online for more info.
+    testDirectory = testDirectory.replace(":", "\:")  # escape colons from tkinter input.
+    # testDirectory='D\\:/Copy stuff here/fioData:' #You could hardcode the path.
+
     #Test 1 - Ask the user if they know the threshold already. This will skip the test to find the threshold
     brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
     if brownout_already_found == "Yes":
@@ -128,14 +154,56 @@ def main():
     #Start stream and join the filepaths
     my_stream = my_ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
 
-    #Start ramping around brownout threshold
-    ramp_at_brownout_threshold(my_ppm, my_stream, brownout_12v, brownout_3v3, configure_ramp_pattern)
+    #Setup FIO load for later test
+    fio_profiles = {
+                    "write_idle" : {
+                    "type": "idle",
+                    "idle_seconds": fio_write_time},
 
-    #Sleep for 10 seconds while drive resets so we can be sure it is back online
-    visual_sleep(drive_reset_time, title="Wait for drive to be online")
+                    "verify_idle": {
+                    "type": "idle",
+                    "idle_seconds": fio_write_time},
 
-    #Run the crowbar tests
-    run_crowbar_tests(my_ppm, my_stream, crowbar_slew_rates, brownout_12v, brownout_3v3)
+                    "write_4k" : {
+                    "directory": "\"" + testDirectory + "\"",
+                    "rw": "randwrite", #random write
+                    "size": "1G",
+                    "runtime": fio_write_time,
+                    "direct" : "1", #Bypass OS RAM Cache
+                    "sync" : "1", #Force drive to acknowledge each write
+                    "verify": "crc32c",  # Verify the file load after each iteration of FIO write
+                    "bs": "4k",
+                    "time_based": "",  # This will force FIO to run for the time declared in runtime
+                    "output": "testFile",  # Required output file, so we can parse it
+                    "status-interval": "1",  # Update interval to add user data on the chart
+                    "name": "4kRead"},
+
+                    "verify_4k" : {
+                    "directory": "\"" + testDirectory + "\"",
+                    "rw": "read", #random write
+                    "size": "1G",
+                    "runtime": fio_write_time,
+                    "direct": "1",
+                    "bs": "4k",
+                    "time_based": "",  # This will force FIO to run for the time declared in runtime
+                    "output": "testFile",  # Required output file, so we can parse it
+                    "status-interval": "1",  # Update interval to add user data on the chart
+                    "verify": "crc32c", #Verify the file load after each iteration of FIO write
+                    "name": "4kRead"},
+    }
+
+    #For each FIO load that we have (including an idle case)
+    for fio_loads in fio_profiles:
+        #Start FIO Load. There is an idle load so we can do
+
+        #Start ramping around brownout threshold
+        ramp_at_brownout_threshold(my_ppm, my_stream, brownout_12v, brownout_3v3, configure_ramp_pattern)
+
+        #Sleep for 10 seconds while drive resets so we can be sure it is back online
+        visual_sleep(drive_reset_time, title="Wait for drive to be online")
+
+        #Run the crowbar tests
+        run_crowbar_tests(my_ppm, my_stream, crowbar_slew_rates, brownout_12v, brownout_3v3)
 
     #Stop stream
     my_stream.stop_stream()
@@ -146,6 +214,9 @@ def main():
 
     #Exit the script
     sys.exit(0)
+
+def apply_fio_load():
+    pass
 
 def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brownout_threshold_3v3:int):
     """
