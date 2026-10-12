@@ -150,7 +150,10 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     result = subprocess.run(cmd_verify, capture_output=True, text=True)
 
     # Parse results, pass in the block size to calculate how many kb lost
-    parse_fio_verify(result.stdout, fio_write_load["bs"], test_name, load_name)
+    kb_lost = parse_fio_verify(result.stdout, fio_write_load["bs"], test_name, load_name)
+
+    #If kb_lost is 0, return True.
+    return kb_lost == 0
 
 def voltage_margin(ppm, ramp_time_12v:int, ramp_time_3v3:int, drive_reset_time=10):
     """

@@ -151,12 +151,7 @@ def main():
     response = my_ppm.send_command("RUN:POWer UP")
     print(f"RUN Power up command {response}")
 
-    #For a MegaPPM, set the sampling rate to 1us
-    if my_ppm.send_command("*serial?")[3:7] == "3358":
-        my_ppm.send_command("stream mode resample 1us")
-    #For a standard PPM, set the sampling rate to 4us
-    else:
-        my_ppm.send_command("stream mode resample 100us")
+    my_ppm.send_command("stream mode resample 16us")
 
     #Instead of using a standard directory, we need to target the drive path, because the drive will be dropping off and rebooting
     print("\n>>> Select the target drive or mount point for FIO Data:")
@@ -228,28 +223,36 @@ def main():
     #Start stream and join the filepaths
     my_stream = my_ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
 
+    #Attempt to open fio_configs.json storing the FIO loads both write and verify
     try:
         with open("fio_configs.json", "r") as f:
+            #Cast it to a variable
             fio_profiles = json.load(f)
     except FileNotFoundError:
         print("Error: fio_configs.json not found")
         sys.exit(1)
 
-    run_sequence = []
+    #Initialise the sequence of FIO loads
+    fio_run_sequence = []
+    #Inject the target drive path into the directory for both write and verify operations
     fio_profiles["idle_config"]["write"]["directory"] = test_directory
     fio_profiles["idle_config"]["verify"]["directory"] = test_directory
 
-    run_sequence.append({
+    #Append the idle test as the first iteration
+    fio_run_sequence.append({
         "is_loaded": False,
         "profile_name": "Idle",
         "write": fio_profiles["idle_config"]["write"],
         "verify": fio_profiles["idle_config"]["verify"]
     })
 
+    #For each write operation we have
     for load_profile in fio_profiles["loaded_configs"]:
+        #Inject the target drive directory
         load_profile["write"]["directory"] = test_directory
         load_profile["verify"]["directory"] = test_directory
-        run_sequence.append({
+        #Append the loaded tests to fio_run_sequence
+        fio_run_sequence.append({
             "is_loaded": True,
             "profile_name": load_profile["name"],
             "write": load_profile["write"],
@@ -257,13 +260,13 @@ def main():
         })
 
     #Start ramping around brownout threshold
-    run_ramp_tests(my_ppm, my_stream, brownout_12v, brownout_3v3, ramp_test_configurations, test_directory, run_sequence)
+    ramp_results = run_ramp_tests(my_ppm, my_stream, brownout_12v, brownout_3v3, ramp_test_configurations, test_directory, fio_run_sequence)
 
     #Pause in between tests
     visual_sleep(drive_reset_time, title="Switching tests, changing from ramp test to crowbar")
 
     #Run the crowbar tests
-    run_crowbar_tests(my_ppm, my_stream, crowbar_slew_rates, brownout_12v, brownout_3v3, test_directory, run_sequence)
+    crowbar_results = run_crowbar_tests(my_ppm, my_stream, crowbar_slew_rates, brownout_12v, brownout_3v3, test_directory, fio_run_sequence)
 
     #Sleep after the last test
     time.sleep(5)
@@ -274,10 +277,38 @@ def main():
     # Exit cleanly, close the PPM connection, leave QPS recording open for viewing
     my_ppm.close_connection()
 
-    # print("\nCleaning up FIO test data")
-    # try:
-    #     if os.path.exists(test_directory):
-    #         shutil
+    #Combine the results from both tests
+    all_results = ramp_results + crowbar_results
+    #Start by setting overall pass to true
+    overall_pass = True
+    #Create an empty list to store failed tests
+    failed_tests = []
+
+    #For each test result we have
+    for test_name, passed in all_results:
+        #If we've passed, log status as PASS
+        status = "PASS" if passed else "FAIL"
+        #If one test has failed, logged the whole test as failed
+        if not passed:
+            overall_pass = False
+            failed_tests.append(test_name)
+
+    if overall_pass:
+        print("\n***********************************************************************************")
+        print("\nAll tests passed!")
+        print("It is likely that your PLP implementation is sufficient to protect data integrity!")
+        print("Consider re-running with different slew rates, parameters, and brownout thresholds\n")
+        print("***********************************************************************************")
+
+    else:
+        #If one test or more has failed, print the details of the failure
+        print("\n***********************************************************************************")
+        print("\nTEST FAILED!")
+        for failed_test in failed_tests:
+            print(f"  - {failed_test}")
+        print("It is likely that your PLP implementation is not wholly successful in this test")
+        print("Consider re-running this test to confirm this\n")
+        print("***********************************************************************************")
 
     #When QPS is closed, the script will close
     sys.exit(0)
@@ -297,6 +328,8 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 
     """
     stream.add_annotation(title=f"Start of crowbar tests")
+    #Empty list to store test results
+    test_results = []
 
     #Wrapper function inside to add the annotation
     def crowbar_with_annotation(ppm, rail, slew_down, slew_up, brownout, title, extra_text):
@@ -309,41 +342,63 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
         rate_down = rates[0] / 1000
         rate_up = rates[1] / 1000
 
+        #For each idle case and loads
         for run_details in run_sequence:
+            #Boolean - false if idle
             is_loaded = run_details["is_loaded"]
+            #Get the profile name
             profile_name = run_details["profile_name"]
+            #Get the write and verify arguments
             fio_write = run_details["write"]
             fio_verify = run_details["verify"]
 
-            fio_functions.run_test_with_fio_load(
-                f"Crowbar_12V_to_GND_{profile_name}",test_directory, fio_write, fio_verify, is_loaded,
+            #Create the title
+            test_1 = f"Crowbar_12V_to_GND_{profile_name}"
+            result_1 = fio_functions.run_test_with_fio_load(
+                test_1,test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "12V", rate_down, rate_up, None, f"Crowbar_12v_to_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+            test_results.append((test_1, result_1))
 
-            fio_functions.run_test_with_fio_load(
-                f"Crowbar_3V3_GND_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
+
+            test_2 =  f"Crowbar_3V3_GND_{profile_name}"
+            result_2 = fio_functions.run_test_with_fio_load(
+                test_2 ,test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "3V3", rate_down, rate_up, None, f"Crowbar_3v3_to_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+            test_results.append((test_2, result_2))
 
-            fio_functions.run_test_with_fio_load(
-                f"Crowbar_12V_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
+
+            test_3 = f"Crowbar_12V_Brownout_{profile_name}"
+            result_3 = fio_functions.run_test_with_fio_load(
+                test_3,test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "12V", rate_down, rate_up, brownout_threshold_12v, f"Crowbar_12v_to_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+            test_results.append((test_3, result_3))
+
+            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
 
         #Check we have a brownout_threshold for 3V3 before attempting to crowbar to brownout_threshold
         if brownout_threshold_3v3 != 0:
-            fio_functions.run_test_with_fio_load(
-                f"Crowbar_3V3_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+            test_4 = f"Crowbar_3V3_Brownout_{profile_name}"
+            result_4 = fio_functions.run_test_with_fio_load(
+                test_4,test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "3V3", rate_down, rate_up, brownout_threshold_3v3, f"Crowbar_3v3_to_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+            test_results.append((test_4, result_4))
+
+            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
         else:
             print("Skipping 3V3 crowbar down to brownout level as it wasn't found")
 
     stream.add_annotation(title=f"End of crowbar tests")
+    return test_results
 
 def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, brownout_threshold:int = None):
     """
@@ -367,6 +422,8 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
         print("Rail not recognised")
         nominal_voltage = None
 
+    #Check that the slew rates are not faster than what we can do
+    #We specify 1V/us with no load, in practice the slew rates are going to be much slower
     if slew_rate_down > 1.0:
         print("Slew rate down selected is faster than PPM can do with no load, setting 1V/us")
         slew_rate_down = 1.0
@@ -418,8 +475,6 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     #Sleep for 1 second after the pattern is run. Assume most patterns are sub 100ms, with most likely being in us range.
     time.sleep(1)
 
-    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-
     ppm.send_command("SIGnal:12V:PATtern CLEAR")
     ppm.send_command("SIGnal:3V3:PATtern CLEAR")
 
@@ -428,6 +483,8 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
     Wrapper function to run ramp test around brownout thresholds
     """
     stream.add_annotation(title="Start of ramp tests")
+    #Initialise an empty list for storing test results
+    test_results = []
     for config in ramp_configurations:
         #Assign the jumps in the array to variables
         jump_above_12v = config[0]
@@ -435,23 +492,31 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
         jump_above_3v3 = config[2]
         jump_below_3v3 = config[3]
 
+        #For each FIO write/verify load
         for run_details in run_sequence:
+            #Get the parameters
             is_loaded = run_details["is_loaded"]
             profile_name = run_details["profile_name"]
             fio_write = run_details["write"]
             fio_verify = run_details["verify"]
 
+            test_name = f"Ramp_12V_A{jump_above_12v}_B{jump_below_12v}_{profile_name}"
+
             # Create the annotation
             stream.add_annotation(title=f"Starting ramp {profile_name}")
 
-            fio_functions.run_test_with_fio_load(
+            passed = fio_functions.run_test_with_fio_load(
                 f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
                 ppm, brownout_12v, brownout_3v3, jump_above_12v, jump_below_12v, jump_above_3v3, jump_below_3v3
             )
 
+            #Append the test results to the list
+            test_results.append((test_name, passed))
+
             stream.add_annotation(title=f"End of ramp {profile_name}")
 
     stream.add_annotation(title="End of ramp tests")
+    return test_results
 
 def ramp_at_brownout_threshold(ppm, brownout_threshold_12v:int, brownout_threshold_3v3:int, jump_above_12v:int, jump_below_12v:int, jump_above_3v3:int, jump_below_3v3:int):
     """
