@@ -5,6 +5,8 @@ as well as the direct commands to run the FIO operations and verify the FIO oper
 
 fio_configs.json holds the FIO loads and verifies used to write data and then verify data from the drive
 
+Note: The script must be run from a separate
+
 Requirements:
     Software:
         Python 3.14 or later
@@ -16,7 +18,7 @@ Requirements:
         Local control PC - either Windows or Linux
         Hot-pluggable system
         Enterprise drive
-        Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358
+        Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
         Relevant power Injection fixture
 """
 
@@ -99,11 +101,11 @@ def main():
 
     # Module to work with
     print("\n-Requesting PPM selection")
-    #my_device_id = GetQpsModuleSelection(my_qps)
+    my_device_id = GetQpsModuleSelection(my_qps)
 
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address as shown below
-    my_device_id = "USB:QTL1999-06-127"
+    #my_device_id = "USB:QTL1999-06-127"
     #my_device_id = "TCP:10.0.8.100"
 
     # Create a Quarch device connected via QPS
@@ -154,17 +156,19 @@ def main():
         my_ppm.send_command("stream mode resample 1us")
     #For a standard PPM, set the sampling rate to 4us
     else:
-        #TODO CHANGE BACK
         my_ppm.send_command("stream mode resample 100us")
 
     #Instead of using a standard directory, we need to target the drive path, because the drive will be dropping off and rebooting
     print("\n>>> Select the target drive or mount point for FIO Data:")
-    selected_drive_path =  "D:/"
-    # Request user to select the folder to use for FIO data
-    # try:
-    #     selected_drive_path = tkFileDialog.askdirectory(parent=root, title="Select drive or mount point for FIO Data")
-    # except Exception as e:
-    #     selected_drive_path = input(f"Failed to open folder dialog\nException: {e}\n, please enter the drive path (e.g. D:\\ for FIO to access\n>")
+
+    #Optional hardcode. Uncomment this, and comment in block below to hardcode the drive path
+    #selected_drive_path =  "D:/"
+
+    #Request user to select the folder to use for FIO data
+    try:
+        selected_drive_path = tkFileDialog.askdirectory(parent=root, title="Select drive or mount point for FIO Data")
+    except Exception as e:
+        selected_drive_path = input(f"Failed to open folder dialog\nException: {e}\n, please enter the drive path (e.g. D:\\ for FIO to access\n>")
 
     if selected_drive_path == "":
         raise Exception("No drive selected")
@@ -197,21 +201,21 @@ def main():
     #fio_directory = test_directory.replace(":", "\:")  # escape colons from tkinter input.
     # drive_path='D\\:/Copy stuff here/fioData:' #You could hardcode the path.
 
-    # #Test 1 - Ask the user if they know the threshold already. If known, this will skip the test to find the threshold
-    # brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
-    # if brownout_already_found == "Yes":
-    #     brownout_12v = int(input("Please enter the brownout threshold for 12V in mV :"))
-    #     brownout_3v3 = int(input("Please enter the brownout threshold for 3V3 in mV :"))
-    # else:
-    #     #Threshold is not known
-    #     print("Starting stream to find brownout threshold. This will be a separate stream to other testing")
-    #     #Find the threshold of a brownout on both rails by margining each rail individually down to 0V over 5 seconds
-    #     #This has its own separate stream because we need to export to CSV to find the threshold
-    #     #brownout_12v, brownout_3v3 = fio_functions.voltage_margin(my_ppm, 5000, 5000, drive_reset_time)
+    #Test 1 - Ask the user if they know the threshold already. If known, this will skip the test to find the threshold
+    brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
+    if brownout_already_found == "Yes":
+        brownout_12v = int(input("Please enter the brownout threshold for 12V in mV :"))
+        brownout_3v3 = int(input("Please enter the brownout threshold for 3V3 in mV :"))
+    else:
+        #Threshold is not known
+        print("Starting stream to find brownout threshold. This will be a separate stream to other testing")
+        #Find the threshold of a brownout on both rails by margining each rail individually down to 0V over 5 seconds
+        #This has its own separate stream because we need to export to CSV to find the threshold
+        brownout_12v, brownout_3v3 = fio_functions.voltage_margin(my_ppm, 5, 5, drive_reset_time)
 
     #OPTIONAL - If you want to hardcode thresholds, comment out block of code above, and uncomment 2 lines below
-    brownout_12v = 8500
-    brownout_3v3 = 2600
+    # brownout_12v = 8500
+    # brownout_3v3 = 2600
 
     #Now we have the thresholds, wait 2 seconds before we start the stream
     time.sleep(2)
@@ -251,7 +255,6 @@ def main():
             "write": load_profile["write"],
             "verify": load_profile["verify"]
         })
-
 
     #Start ramping around brownout threshold
     run_ramp_tests(my_ppm, my_stream, brownout_12v, brownout_3v3, ramp_test_configurations, test_directory, run_sequence)
@@ -313,29 +316,29 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             fio_verify = run_details["verify"]
 
             fio_functions.run_test_with_fio_load(
-                f"Crowbar_12V_to_GND_{profile_name}",test_directory, fio_write, fio_verify, is_loaded, profile_name,
-                crowbar_with_annotation,
-                ppm, "12V", rate_down, rate_up, None, f"Crowbar_12v_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
+                f"Crowbar_12V_to_GND_{profile_name}",test_directory, fio_write, fio_verify, is_loaded,
+                crowbar_with_annotation, profile_name,
+                ppm, "12V", rate_down, rate_up, None, f"Crowbar_12v_to_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
 
             fio_functions.run_test_with_fio_load(
-                f"Crowbar_3V3_GND_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded, profile_name,
-                crowbar_with_annotation,
-                ppm, "3V3", rate_down, rate_up, None, f"Crowbar_3v3_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
+                f"Crowbar_3V3_GND_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+                crowbar_with_annotation, profile_name,
+                ppm, "3V3", rate_down, rate_up, None, f"Crowbar_3v3_to_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
 
             fio_functions.run_test_with_fio_load(
-                f"Crowbar_12V_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded, profile_name,
-                crowbar_with_annotation,
-                ppm, "12V", rate_down, rate_up, brownout_threshold_12v, f"Crowbar_12v_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
+                f"Crowbar_12V_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+                crowbar_with_annotation, profile_name,
+                ppm, "12V", rate_down, rate_up, brownout_threshold_12v, f"Crowbar_12v_to_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
 
         #Check we have a brownout_threshold for 3V3 before attempting to crowbar to brownout_threshold
         if brownout_threshold_3v3 != 0:
             fio_functions.run_test_with_fio_load(
-                f"Crowbar_3V3_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded, profile_name,
-                crowbar_with_annotation,
-                ppm, "3V3", rate_down, rate_up, brownout_threshold_3v3, f"Crowbar_3v3_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
+                f"Crowbar_3V3_Brownout_D{rates[0]}_U{rates[1]}",test_directory, fio_write, fio_verify, is_loaded,
+                crowbar_with_annotation, profile_name,
+                ppm, "3V3", rate_down, rate_up, brownout_threshold_3v3, f"Crowbar_3v3_to_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
         else:
             print("Skipping 3V3 crowbar down to brownout level as it wasn't found")
@@ -345,7 +348,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, brownout_threshold:int = None):
     """
     This is a crowbar test to short a rail to ground or to brownout_threshold and back up very quickly. This is to simulate a screwdriver being dropped into the chassis or similar
-    We can vary the slew rates to see how fast PLP kicks in. The rate set is unlikely to be exactly what is seen because the load of each drive is different and will affect it.
+    We can vary the slew rates to see how fast PLP kicks in. The rate set is unlikely to be exactly what is seen because the capacitance of each drive is different and will affect it.
 
     Parameters:
         ppm: PPM used in testing
@@ -415,6 +418,8 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     #Sleep for 1 second after the pattern is run. Assume most patterns are sub 100ms, with most likely being in us range.
     time.sleep(1)
 
+    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
+
     ppm.send_command("SIGnal:12V:PATtern CLEAR")
     ppm.send_command("SIGnal:3V3:PATtern CLEAR")
 
@@ -440,7 +445,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
             stream.add_annotation(title=f"Starting ramp {profile_name}")
 
             fio_functions.run_test_with_fio_load(
-                f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold,
+                f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
                 ppm, brownout_12v, brownout_3v3, jump_above_12v, jump_below_12v, jump_above_3v3, jump_below_3v3
             )
 
@@ -454,7 +459,6 @@ def ramp_at_brownout_threshold(ppm, brownout_threshold_12v:int, brownout_thresho
 
     Parameters:
         ppm: PPM used in testing
-        stream: Stream object used to place annotation
         brownout_threshold_12v: brownout threshold 12v
         brownout_threshold_3v3: brownout threshold 3v3
         jump_above_12v: threshold above 12v brownout to jump up
@@ -501,7 +505,7 @@ def ramp_at_brownout_threshold(ppm, brownout_threshold_12v:int, brownout_thresho
     ppm.send_command("SIGnal:12v:PAT CLEAR")
     ppm.send_command("SIGnal:3v3:PAT CLEAR")
 
-    visual_sleep(drive_reset_time, title="Wait for drive to be online")
+    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
 
 def create_pattern_around_threshold(ppm, rail, brownout_threshold:int, threshold_jump_above:int, threshold_jump_below:int, timing_array):
     """

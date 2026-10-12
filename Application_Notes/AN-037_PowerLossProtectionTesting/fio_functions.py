@@ -1,5 +1,7 @@
 """
 Separate file to store functions related directly to FIO, so the main file can be kept for Quarchpy functions
+This is less likely to be viewed by a potential user, and neatens up the main script
+This also has AN-014 brownout test contained here, as it has it's own App Note
 """
 
 import os
@@ -9,7 +11,6 @@ import re
 
 import pandas as pd
 from quarchpy.user_interface import visual_sleep
-
 
 def wait_and_poll_drive_remount(target_directory, drive_reset_time=10):
     """
@@ -91,13 +92,21 @@ def parse_fio_verify(fio_verify_output_str, block_size, test_name, load_name):
         print(f"PLP PASSED on {load_name}: No errors detected.\n")
         return 0
 
-def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_write, is_loaded, load_name, plp_test, *plp_test_arguments):
+def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_write, is_loaded, plp_test, load_name, *plp_test_arguments):
     """
     Executes a single complete PLP cycle
     Apply FIO load
     Start PLP test
     Wait for drive to re-appear
     Verify load
+    Parameters:
+        test_name: Name of the test
+        test_directory: Directory for FIO load
+        fio_write_load: FIO write load
+        verify_write: Verify load
+        is_loaded: Boolean. False if idle, true if under load
+        load_name: Name of the FIO load for printing console and annotations
+        plp_test: Crowbar or ramp
     """
 
     #Start by running the FIO load passed in
@@ -110,14 +119,14 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
         cmd_write.append(f"--{k}" if v == "" else f"--{k}={v}")
 
     if is_loaded:
-        print(f"[{load_name} Starting FIO Write Workload...")
+        print(f"{load_name} Starting FIO Write Workload...")
         fio_write = subprocess.Popen(cmd_write, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         #Sleep 2 seconds to build the FIO command
         time.sleep(2)
 
     else:
         #If this is an idle test load, we will start by writing a small file before we perform the test to verify it
-        print(f"[{load_name} Writing small file prior to idle tests")
+        print(f"{load_name} Writing small file prior to idle tests")
         subprocess.run(cmd_write, capture_output=True)
 
     print(f"{load_name} Starting PLP Test...\b")
@@ -141,12 +150,9 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     result = subprocess.run(cmd_verify, capture_output=True, text=True)
 
     # Parse results, pass in the block size to calculate how many kb lost
-    parse_fio_verify(result.stdout, fio_write_load["bs"], test_name)
+    parse_fio_verify(result.stdout, fio_write_load["bs"], test_name, load_name)
 
-
-
-
-def voltage_margin(ppm,  ramp_time_12v:int, ramp_time_3v3:int, drive_reset_time=10):
+def voltage_margin(ppm, ramp_time_12v:int, ramp_time_3v3:int, drive_reset_time=10):
     """
     This is essentially App Note 14 Voltage Margining. This function has its own stream because we need to export to CSV which can't be done real-time
     We export to CSV to find where the brownout threshold is.
@@ -210,15 +216,24 @@ def margin_12v_function(ppm, ramp_time:int):
     """
     print("Margining 12V rail")
 
+    # Clear any previous pattern
+    ppm.send_command("SIGnal:12v:PAT CLEAR")
+    # Set 12V to 12000mv (==12V)
+    ppm.send_command("SIGnal:12v:VOLTage 12000")
+
     # Load 12V Pattern
     # To ramp down -12V down to 0 over 5s
-    ppm.send_command(f"SIGnal:12v:PATtern ADD {ramp_time}s -12000 i")
+    response = ppm.send_command(f"SIGnal:12v:PATtern ADD {ramp_time}s -11998 i")
+    print(response)
 
     # Wait 1 second for the pattern to be loaded
     time.sleep(1)
 
+    #TODO REMOVE
+    ppm.send_command("SIG:12V:PAT DUMP")
+
     # Run 12V pattern
-    ppm.send_command("RUN:PATtern")
+    ppm.send_command("RUN:PATtern 1")
 
     # Pattern will run over ramp_time seconds (default 5), so after ramp_time + 2 second buffer) we will reset the rail to nominal
     visual_sleep(ramp_time + 2)
@@ -239,14 +254,21 @@ def margin_3v3_function(ppm, ramp_time:int):
     """
     print("Margining 3V3 rail")
 
+    # Clear any previous pattern
+    ppm.send_command("SIGnal:3v3:PAT CLEAR")
+    # Set 3v3 to 3300mV
+    ppm.send_command("SIGnal:3v3:VOLTage 3300")
+
     # Load the 3V3 pattern
     ppm.sendCommand(f"SIGnal:3v3:PATtern ADD {ramp_time}s -3300 i")
 
     # Wait 1 second for the pattern to be loaded
     time.sleep(1)
 
+    ppm.send_command("SIGnal:3v3:PATtern DUMP")
+
     # Run the 3v3 pattern
-    ppm.send_command("RUN:PATtern")
+    ppm.send_command("RUN:PATtern 1")
 
     # Pattern will run over ramp_time seconds, so after ramp_time + 2 second buffer we will reset the rail to nominal
     print("Margining 3V3 rail")
@@ -301,8 +323,7 @@ def find_brownout_voltage(csv_path):
 
     else:
         #If we don't have any rows matching the criteria, return None
-        brownout_level_12v = None
-        print(f"Warning: 12V power never dropped below 1mW.")
+        brownout_level_12v = int(input("Could not detect the threshold of where the drive dropped off. Please enter the 12V threshold in millivolts"))
 
     # We check if 3V3 power is more than 1mW when we aren't margining (first 3 seconds)
     # If the power is less than 1mW, we cannot accurately determine where the drive drops off, if it drops off at all.
@@ -316,7 +337,7 @@ def find_brownout_voltage(csv_path):
         print("We cannot accurately find where the drive drops off when margining the 3V3 rail")
 
         # Set the return variables to None
-        brownout_level_3v3 = None
+        brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts"))
 
     else:  # The drive uses more than 1mW when idle, so we assume that we can find where the drive drops off
         # Get the cells where 3V3 power is under the threshold
@@ -335,7 +356,7 @@ def find_brownout_voltage(csv_path):
 
         else:
             # If we don't have any rows matching the criteria, we will return 0
-            brownout_level_3v3 = 0
+            brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts"))
 
             print(f"Warning: 3V3 power never dropped below 1mW.")
 
