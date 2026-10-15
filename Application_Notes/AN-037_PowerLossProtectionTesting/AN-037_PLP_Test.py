@@ -111,12 +111,12 @@ def main():
 
     # Module to work with
     print("\n-Requesting PPM selection")
-    my_device_id = GetQpsModuleSelection(my_qps)
+    #my_device_id = GetQpsModuleSelection(my_qps)
 
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address as shown below
     #my_device_id = "USB:QTL1999-06-127"
-    #my_device_id = "TCP:10.0.8.100"
+    my_device_id = "TCP:10.0.8.100"
 
     # Create a Quarch device connected via QPS
     my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
@@ -128,8 +128,6 @@ def main():
 
     #Returns the name of the PPM module
     print("Connected to: \n" + my_ppm.send_command("*IDN?"))
-
-    my_ppm.send_command("CONFig:DEFault STATE")
 
     #Checks if we have an intelligent fixture at 3V3
     conf_out = my_ppm.send_command("CONFig:OUTput:MODE?")
@@ -164,54 +162,25 @@ def main():
     my_ppm.send_command("stream mode resample 16us")
 
     #Instead of using a standard directory, we need to target the drive path, because the drive will be dropping off and rebooting
-    print("\n>>> Select the target drive or mount point for FIO Data:")
+    print("\n>>> Please enter the raw device path for the DUT:")
+    print("Linux example: /dev/nvme1n1")
+    print("Windows example: \\\\.\\D")
+    raw_device_path = input("> ").strip()
 
-    #Optional hardcode. Uncomment this, and comment in block below to hardcode the drive path
-    #selected_drive_path =  "D:/"
-
-    #Request user to select the folder to use for FIO data
-    try:
-        selected_drive_path = tkFileDialog.askdirectory(parent=root, title="Select drive or mount point for FIO Data")
-    except Exception as e:
-        selected_drive_path = input(f"Failed to open folder dialog\nException: {e}\n, please enter the drive path (e.g. D:\\ for FIO to access\n>")
-
-    if selected_drive_path == "":
-        raise Exception("No drive selected")
-    print("Selected : " + selected_drive_path)
-
-    #Explicitly cast it as a string
-    selected_drive_path = str(selected_drive_path)
+    if not raw_device_path:
+        raise Exception("No device path selected")
+    print("Selected target: " + raw_device_path)
 
     # Get timestamp in YYMMDD-HHMMSS
     timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
     #Create a timestamped folder for our FIO loads so that we target a new file every time. Otherwise FIO can reuse the same file and not perform any load
     folder_name = f"fio_tests{timestamp_stream_start}"
-
-    #If Windows
-    if os.name == "nt":
-        #Get just the drive letter
-        drive_path = os.path.splitdrive(selected_drive_path)[0]
-
-        #If getting the drive letter has failed for any reason, raise exception
-        if not drive_path:
-            raise Exception(f"Could not determine drive letter from {selected_drive_path}")
-
-        #Create D:\fio_tests. os.sep adds \\ for Windows
-        test_directory = os.path.join(drive_path + os.sep, folder_name)
-    #If Linux
-    else:
-        test_directory = os.path.join(selected_drive_path, folder_name)
+    test_directory = os.path.join(os.getcwd(), "Main_PLP_Tests", folder_name)
 
     #If the filepath doesn't already exist
     if not os.path.exists(test_directory):
         #Make it
         os.makedirs(test_directory)
-
-    #Create an escaped path
-    if os.name == "nt":
-        fio_directory = test_directory.replace(":", "\\:")
-    else:
-        fio_directory = test_directory
 
     #Attempt to open fio_configs.json storing the FIO loads both write and verify
     try:
@@ -222,16 +191,34 @@ def main():
         print("Error: fio_configs.json not found")
         sys.exit(1)
 
-    #Create a list and add the idle workloads
+    #Select the IO engine based on os
+    if os.name == "nt":
+        current_io_engine = "windowsaio"
+    else:
+        current_io_engine = "libaio"
+
+    # 3. Inject the engine AND the raw device path into the idle config
+    fio_profiles["idle_config"]["write"]["ioengine"] = current_io_engine
+    fio_profiles["idle_config"]["write"]["filename"] = raw_device_path
+    fio_profiles["idle_config"]["verify"]["ioengine"] = current_io_engine
+    fio_profiles["idle_config"]["verify"]["filename"] = raw_device_path
+
+    # Initialise the sequence of FIO loads using a list literal
     fio_run_sequence = [
         {"is_loaded": False,
-        "profile_name": "Idle",
-        "write": fio_profiles["idle_config"]["write"],
-        "verify": fio_profiles["idle_config"]["verify"]
-    }]
+         "profile_name": "Idle",
+         "write": fio_profiles["idle_config"]["write"],
+         "verify": fio_profiles["idle_config"]["verify"]
+         }]
 
-    #Add the loaded workloads
+    # For each write operation we have
     for load_profile in fio_profiles["loaded_configs"]:
+        # Inject the engine AND the raw device path into each loaded workload
+        load_profile["write"]["ioengine"] = current_io_engine
+        load_profile["write"]["filename"] = raw_device_path
+        load_profile["verify"]["ioengine"] = current_io_engine
+        load_profile["verify"]["filename"] = raw_device_path
+
         fio_run_sequence.append({
             "is_loaded": True,
             "profile_name": load_profile["name"],

@@ -1,23 +1,23 @@
 {
     "idle_config": {
-        "write": { "filename": "idle.dat", "rw": "write", "size": "10M", "direct": "1", "verify": "crc32c", "bs": "4k", "do_verify": "0" },
-        "verify": { "filename": "idle.dat", "rw": "read", "size": "10M", "direct": "1", "verify": "crc32c", "bs": "4k", "verify_fatal": "0", "continue_on_error": "verify" }
+        "write": { "filename": "idle.dat", "rw": "write", "size": "100M", "direct": "1", "verify": "crc32c", "bs": "4k", "do_verify": "0", "ioengine": "windowsaio", "iodepth": "1", "thread": "1" },
+        "verify": { "filename": "idle.dat", "rw": "read", "size": "100M", "direct": "1", "verify": "crc32c", "bs": "4k", "verify_fatal": "0", "continue_on_error": "verify", "ioengine": "windowsaio", "iodepth": "1", "thread": "1" }
     },
     "loaded_configs": [
         {
             "name": "Load_4k",
-            "write": { "filename": "test_4k.dat", "rw": "randwrite", "size": "100M", "runtime": "15", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "4k", "time_based": "", "do_verify": "0", "verify_state_save": "1" },
-            "verify": { "filename": "test_4k.dat", "rw": "randread", "size": "100M", "direct": "1", "bs": "4k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify" }
-        },
-        {
-            "name": "Load_128k",
-            "write": { "filename": "test_128k.dat", "rw": "randwrite", "size": "200M", "runtime": "15", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "128k", "time_based": "", "do_verify": "0", "verify_state_save": "1" },
-            "verify": { "filename": "test_128k.dat", "rw": "randread", "size": "200M", "direct": "1", "bs": "128k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify" }
+            "write": { "filename": "test_4k.dat", "rw": "randwrite", "size": "1G", "runtime": "30", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "4k", "time_based": "", "do_verify": "0", "verify_state_save": "1", "ioengine": "windowsaio", "iodepth": "32", "scramble_buffers": "1", "thread": "1" },
+            "verify": { "filename": "test_4k.dat", "rw": "randread", "size": "1G", "direct": "1", "bs": "4k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify", "ioengine": "windowsaio", "iodepth": "32", "thread": "1" }
         },
         {
             "name": "Load_64k",
-            "write": { "filename": "test_64k.dat", "rw": "randwrite", "size": "100M", "runtime": "15", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "64k", "time_based": "", "do_verify": "0", "verify_state_save": "1" },
-            "verify": { "filename": "test_64k.dat", "rw": "randread", "size": "100M", "direct": "1", "bs": "64k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify" }
+            "write": { "filename": "test_64k.dat", "rw": "randrw", "rwmixwrite": "70", "size": "2G", "runtime": "30", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "64k", "time_based": "", "do_verify": "0", "verify_state_save": "1", "ioengine": "windowsaio", "iodepth": "32", "scramble_buffers": "1", "thread": "1" },
+            "verify": { "filename": "test_64k.dat", "rw": "read", "size": "2G", "direct": "1", "bs": "64k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify", "ioengine": "windowsaio", "iodepth": "32", "thread": "1" }
+        },
+        {
+            "name": "Load_128k",
+            "write": { "filename": "test_128k.dat", "rw": "write", "size": "4G", "runtime": "30", "direct": "1", "sync": "1", "verify": "crc32c", "bs": "128k", "time_based": "", "do_verify": "0", "verify_state_save": "1", "ioengine": "windowsaio", "iodepth": "16", "scramble_buffers": "1", "thread": "1" },
+            "verify": { "filename": "test_128k.dat", "rw": "read", "size": "4G", "direct": "1", "bs": "128k", "verify": "crc32c", "verify_state_load": "1", "verify_fatal": "0", "continue_on_error": "verify", "ioengine": "windowsaio", "iodepth": "16", "thread": "1" }
         }
     ]
 }

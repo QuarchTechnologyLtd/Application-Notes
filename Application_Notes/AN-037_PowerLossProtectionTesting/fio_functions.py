@@ -114,22 +114,18 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     cmd_name = f"--name={test_name.replace(' ', '_')}"
     cmd_write = ["fio", cmd_name]
 
-    original_filename = fio_write_load.get("filename", "test_data.dat")
-    base_name, ext = os.path.splitext(original_filename)
-    unique_filename = f"{base_name}_{test_name.replace(' ', '_')}{ext}"
-
-    #For each key value pair in fio_write_load
+    # For each key value pair in fio_write_load
     for k, v in fio_write_load.items():
-        if k == "filename":
-            cmd_write.append(f"--filename={unique_filename}")
-        else:
-            #Append --key if value is empty, otherwise append --key=value
-            cmd_write.append(f"--{k}" if v == "" else f"--{k}={v}")
+        # Append --key if value is empty, otherwise append --key=value
+        cmd_write.append(f"--{k}" if v == "" else f"--{k}={v}")
+
+    # Force FIO to write its console output directly to a text file locally
+    cmd_write.append(f"--output=fio_debug_{test_name.replace(' ', '_')}.txt")
 
     if is_loaded:
         fio_write = subprocess.Popen(cmd_write, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=test_directory)
-        #Sleep 5 seconds to build the FIO command
-        time.sleep(5)
+        #Sleep 2 seconds to build the FIO command
+        time.sleep(2)
 
     else:
         #If this is an idle test load, we will start by writing a small file before we perform the test to verify it
@@ -158,6 +154,9 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
 
     # Parse results, pass in the block size to calculate how many kb lost
     kb_lost = parse_fio_verify(result.stdout, fio_write_load["bs"], test_name, load_name)
+
+    #After we verify, wait for the drive to return to idle
+    visual_sleep(10, title="Wait for drive to be stable")
 
     #If kb_lost is 0, return True.
     return kb_lost == 0
