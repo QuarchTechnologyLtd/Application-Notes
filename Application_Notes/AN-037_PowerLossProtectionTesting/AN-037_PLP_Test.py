@@ -1,11 +1,22 @@
 """
-This is the main script for PLP tests.
-This holds most of the controls of the PPM, that may be useful to your own scripting. fio_functions.py contains the relevant sections of AN-014 to find the brownout threshold
-as well as the direct commands to run the FIO operations and verify the FIO operations
+This is the main script for PLP tests. This holds most of the controls of the PPM, that may be useful to your own scripting.
+fio_functions.py contains the relevant sections of AN-014 to find the brownout threshold as well as the direct commands to run the FIO operations and verify the FIO operations
+
+We start by finding the threshold of where the drive will brownout, unless this is already known
+Then, we start to ramp the voltage around the brownout threshold, to get PLP on the verge of kicking in.
+Then, we crowbar the rails, both down to ground, and down to it's brownout threshold.
+
+The aim of these tests is to cause PLP to kick in.
+We perform these tests under idle, as well as under load, to check that we don't corrupt data in transit, and that the drive remaps correctly.
+After each test we verify the data to check for data loss, and at the end give an overall pass/fail scenario
+The ideal case is no data loss, and the drive remaps correctly after sudden power loss. This would show that the hardware and FW implementation of PLP is likely sufficient.
+
+The parameters of the tests are configurable, and should be changed over different test runs to give a wide variety of tests.
+This includes the timings of patterns, the steps in the pattern, and slew rates in the pattern.
 
 fio_configs.json holds the FIO loads and verifies used to write data and then verify data from the drive
 
-Note: The script must be run from a separate
+Note: The script must be run from a separate drive other than the DUT, as we expect the DUT to drop off
 
 Requirements:
     Software:
@@ -17,7 +28,7 @@ Requirements:
     Hardware:
         Local control PC - either Windows or Linux
         Hot-pluggable system
-        Enterprise drive
+        Enterprise drive with PLP implemented
         Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
         Relevant power Injection fixture
 """
@@ -32,7 +43,6 @@ import logging  # Optionally used to create a log to help with debugging
 import tkinter  #Used for filepath selection for FIO loads
 from tkinter import filedialog
 import json #Used to store the FIO loads in a separate JSON file
-import shutil #Used to remove the files FIO generates
 
 import fio_functions #Stores FIO functions so mostly quarchpy control in this main script
 
@@ -172,6 +182,11 @@ def main():
     #Explicitly cast it as a string
     selected_drive_path = str(selected_drive_path)
 
+    # Get timestamp in YYMMDD-HHMMSS
+    timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
+    #Create a timestamped folder for our FIO loads so that we target a new file every time. Otherwise FIO can reuse the same file and not perform any load
+    folder_name = f"fio_tests{timestamp_stream_start}"
+
     #If Windows
     if os.name == "nt":
         #Get just the drive letter
@@ -182,19 +197,47 @@ def main():
             raise Exception(f"Could not determine drive letter from {selected_drive_path}")
 
         #Create D:\fio_tests. os.sep adds \\ for Windows
-        test_directory = os.path.join(drive_path + os.sep, "fio_tests")
+        test_directory = os.path.join(drive_path + os.sep, folder_name)
     #If Linux
     else:
-        test_directory = os.path.join(selected_drive_path, "fio_tests")
+        test_directory = os.path.join(selected_drive_path, folder_name)
 
     #If the filepath doesn't already exist
     if not os.path.exists(test_directory):
         #Make it
         os.makedirs(test_directory)
 
-    # FIO needs colons escaped when passing "directory" or "filename" look at FIO documentation online for more info.
-    #fio_directory = test_directory.replace(":", "\:")  # escape colons from tkinter input.
-    # drive_path='D\\:/Copy stuff here/fioData:' #You could hardcode the path.
+    #Create an escaped path
+    if os.name == "nt":
+        fio_directory = test_directory.replace(":", "\\:")
+    else:
+        fio_directory = test_directory
+
+    #Attempt to open fio_configs.json storing the FIO loads both write and verify
+    try:
+        with open("fio_configs.json", "r") as f:
+            #Cast it to a variable
+            fio_profiles = json.load(f)
+    except FileNotFoundError:
+        print("Error: fio_configs.json not found")
+        sys.exit(1)
+
+    #Create a list and add the idle workloads
+    fio_run_sequence = [
+        {"is_loaded": False,
+        "profile_name": "Idle",
+        "write": fio_profiles["idle_config"]["write"],
+        "verify": fio_profiles["idle_config"]["verify"]
+    }]
+
+    #Add the loaded workloads
+    for load_profile in fio_profiles["loaded_configs"]:
+        fio_run_sequence.append({
+            "is_loaded": True,
+            "profile_name": load_profile["name"],
+            "write": load_profile["write"],
+            "verify": load_profile["verify"]
+        })
 
     #Test 1 - Ask the user if they know the threshold already. If known, this will skip the test to find the threshold
     brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
@@ -218,46 +261,9 @@ def main():
 
     #Create stream path in a folder called Main_PLP_Tests in the current working directory
     stream_path = os.path.join(os.getcwd(), "Main_PLP_Tests")
-    #Get timestamp in YYMMDD-HHMMSS
-    timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
+
     #Start stream and join the filepaths
     my_stream = my_ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
-
-    #Attempt to open fio_configs.json storing the FIO loads both write and verify
-    try:
-        with open("fio_configs.json", "r") as f:
-            #Cast it to a variable
-            fio_profiles = json.load(f)
-    except FileNotFoundError:
-        print("Error: fio_configs.json not found")
-        sys.exit(1)
-
-    #Initialise the sequence of FIO loads
-    fio_run_sequence = []
-    #Inject the target drive path into the directory for both write and verify operations
-    fio_profiles["idle_config"]["write"]["directory"] = test_directory
-    fio_profiles["idle_config"]["verify"]["directory"] = test_directory
-
-    #Append the idle test as the first iteration
-    fio_run_sequence.append({
-        "is_loaded": False,
-        "profile_name": "Idle",
-        "write": fio_profiles["idle_config"]["write"],
-        "verify": fio_profiles["idle_config"]["verify"]
-    })
-
-    #For each write operation we have
-    for load_profile in fio_profiles["loaded_configs"]:
-        #Inject the target drive directory
-        load_profile["write"]["directory"] = test_directory
-        load_profile["verify"]["directory"] = test_directory
-        #Append the loaded tests to fio_run_sequence
-        fio_run_sequence.append({
-            "is_loaded": True,
-            "profile_name": load_profile["name"],
-            "write": load_profile["write"],
-            "verify": load_profile["verify"]
-        })
 
     #Start ramping around brownout threshold
     ramp_results = run_ramp_tests(my_ppm, my_stream, brownout_12v, brownout_3v3, ramp_test_configurations, test_directory, fio_run_sequence)
@@ -333,8 +339,8 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 
     #Wrapper function inside to add the annotation
     def crowbar_with_annotation(ppm, rail, slew_down, slew_up, brownout, title, extra_text):
-        crowbar_one_rail(ppm, rail, slew_down, slew_up, brownout)
         stream.add_annotation(title=title, extra_text=extra_text)
+        crowbar_one_rail(ppm, rail, slew_down, slew_up, brownout)
 
     #Assume we will crowbar one rail after the other, then change slew rates
     for rates in slew_rates:
@@ -351,6 +357,8 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             #Get the write and verify arguments
             fio_write = run_details["write"]
             fio_verify = run_details["verify"]
+
+            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
 
             #Create the title
             test_1 = f"Crowbar_12V_to_GND_{profile_name}"
@@ -466,6 +474,8 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     #Command will be similar to "SIGnal:12V:PATtern ADD 60us 0 i"
     ppm.send_command(f"SIGnal:{rail}:PATtern ADD {rise_time} 0 i")
 
+    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
+
     #Sleep for 1 second after pattern is set
     time.sleep(1)
 
@@ -503,7 +513,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
             test_name = f"Ramp_12V_A{jump_above_12v}_B{jump_below_12v}_{profile_name}"
 
             # Create the annotation
-            stream.add_annotation(title=f"Starting ramp {profile_name}")
+            print(stream.add_annotation(title=f"Starting ramp {profile_name}"))
 
             passed = fio_functions.run_test_with_fio_load(
                 f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
@@ -512,8 +522,6 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
 
             #Append the test results to the list
             test_results.append((test_name, passed))
-
-            stream.add_annotation(title=f"End of ramp {profile_name}")
 
     stream.add_annotation(title="End of ramp tests")
     return test_results

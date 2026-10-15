@@ -113,16 +113,23 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     #Format the string for use on command line
     cmd_name = f"--name={test_name.replace(' ', '_')}"
     cmd_write = ["fio", cmd_name]
+
+    original_filename = fio_write_load.get("filename", "test_data.dat")
+    base_name, ext = os.path.splitext(original_filename)
+    unique_filename = f"{base_name}_{test_name.replace(' ', '_')}{ext}"
+
     #For each key value pair in fio_write_load
     for k, v in fio_write_load.items():
-        #Append --key if value is empty, otherwise append --key=value
-        cmd_write.append(f"--{k}" if v == "" else f"--{k}={v}")
+        if k == "filename":
+            cmd_write.append(f"--filename={unique_filename}")
+        else:
+            #Append --key if value is empty, otherwise append --key=value
+            cmd_write.append(f"--{k}" if v == "" else f"--{k}={v}")
 
     if is_loaded:
-        print(f"{load_name} Starting FIO Write Workload...")
-        fio_write = subprocess.Popen(cmd_write, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        #Sleep 2 seconds to build the FIO command
-        time.sleep(2)
+        fio_write = subprocess.Popen(cmd_write, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=test_directory)
+        #Sleep 5 seconds to build the FIO command
+        time.sleep(5)
 
     else:
         #If this is an idle test load, we will start by writing a small file before we perform the test to verify it
@@ -139,7 +146,7 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     #Wait for the drive to come back on line by polling it
     if not wait_and_poll_drive_remount(test_directory):
         print("FAILED: Drive did not remount in time")
-        return
+        return False
 
     #Once the drive is back online, we start the verify workload
     cmd_verify = ["fio", cmd_name]
@@ -147,7 +154,7 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
         cmd_verify.append(f"--{k}" if v == "" else f"--{k}={v}")
 
     print("Verifying drive data to check for data loss")
-    result = subprocess.run(cmd_verify, capture_output=True, text=True)
+    result = subprocess.run(cmd_verify, capture_output=True, text=True, cwd=test_directory)
 
     # Parse results, pass in the block size to calculate how many kb lost
     kb_lost = parse_fio_verify(result.stdout, fio_write_load["bs"], test_name, load_name)
@@ -231,9 +238,6 @@ def margin_12v_function(ppm, ramp_time:int):
 
     # Wait 1 second for the pattern to be loaded
     time.sleep(1)
-
-    #TODO REMOVE
-    ppm.send_command("SIG:12V:PAT DUMP")
 
     # Run 12V pattern
     ppm.send_command("RUN:PATtern 1")
