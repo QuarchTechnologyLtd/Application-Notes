@@ -1,10 +1,21 @@
 """
+AN-037 - Application Note testing PLP
+Overview
+
+This test is designed to test PLP implementation on enterprise SSDs with a Quarch Programmable Power Module.
+
 This is the main script for PLP tests. This holds most of the controls of the PPM, that may be useful to your own scripting.
 fio_functions.py contains the relevant sections of AN-014 to find the brownout threshold as well as the direct commands to run the FIO operations and verify the FIO operations
 
 We start by finding the threshold of where the drive will brownout, unless this is already known
 Then, we start to ramp the voltage around the brownout threshold, to get PLP on the verge of kicking in.
 Then, we crowbar the rails, both down to ground, and down to it's brownout threshold.
+
+Our default patterns are in milliseconds, although microsecond range could be used.
+The PPM can slew upwards at 1V/us without a load, but with a drive connected the true slew rates are likely to be much slower, due to the capacitance of the drive.
+
+With default configurations, the test will last for approximately x minutes
+#TODO - fill in test time
 
 The aim of these tests is to cause PLP to kick in.
 We perform these tests under idle, as well as under load, to check that we don't corrupt data in transit, and that the drive remaps correctly.
@@ -13,24 +24,38 @@ The ideal case is no data loss, and the drive remaps correctly after sudden powe
 
 The parameters of the tests are configurable, and should be changed over different test runs to give a wide variety of tests.
 This includes the timings of patterns, the steps in the pattern, and slew rates in the pattern.
+These are stored as global variables so they are easy to spot and modify
 
 fio_configs.json holds the FIO loads and verifies used to write data and then verify data from the drive
+The FIO load is designed for a Gen5 x4 link, but can be changed for different link widths and speeds
 
 Note: The script must be run from a separate drive other than the DUT, as we expect the DUT to drop off
 
-Requirements:
+########### VERSION HISTORY ###########
+16/10/2026 - Andrew Steedman - initial testing in a live system
+
+########### REQUIREMENTS ###########
     Software:
         Python 3.14 or later
         Quarchpy v2.2.23 or later
-        Pandas (in fio_functions.py)
+        Pandas (used in fio_functions.py)
         FIO - must be added to the path
 
     Hardware:
+        Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
         Local control PC - either Windows or Linux
         Hot-pluggable system
         Enterprise drive with PLP implemented
-        Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
         Relevant power Injection fixture
+
+########### INSTRUCTIONS ###########
+1. Connect Power Injection Fixture to PPM
+2. Connect Power Injection Fixture to drive
+3. Connect Power Injection Fixture to Host
+4. Power on the PPM
+5. Power on the host
+6. Get the drive path
+7. Run AN-037_PLP_Test.py
 """
 
 # Import other libraries used in the examples
@@ -40,9 +65,7 @@ import re
 import subprocess
 import time     # Used for sleep commands to add delays
 import logging  # Optionally used to create a log to help with debugging
-import tkinter  #Used for filepath selection for FIO loads
-from tkinter import filedialog
-import json #Used to store the FIO loads in a separate JSON file
+import json     # Used to store the FIO loads in a separate JSON file
 
 import fio_functions #Stores FIO functions so mostly quarchpy control in this main script
 
@@ -56,32 +79,31 @@ from quarchpy.connection_specific.connection_QPS import QpsInterface
 
 # This is how long we will wait for a drive to come back online after a test before we move on to the next test
 # For NVMe drives this could probably be reduced, but to maximise compatibility default to 20 seconds
-drive_reset_time = 5
+drive_reset_time = 10
 
 # Store slew rates for crowbar testing here. Slew rates passed into the function are expected to be decimal values between 0 and 1.
-# For ease of reading, we will store as *1000 so need to divide by 1000 before passing in. In effect, stored as mV/us or V/ms
+#Stored as mV/us == V/ms
 #[slew_down, slew_up]
 crowbar_slew_rates = [
-    [50, 50],
-    [100, 100]
-    # [700, 200],
-    # [1000, 1000]
+    [50, 3000], #Fast down, slow up
+    [2000, 100], #Slow down, fast up
+    [500, 500], #Medium rate up and down
+    [200, 200]
 ]
 
 #Store the thresholds we jump above and below the threshold here. Stored in millivolts
 #[jump_above_12v, jump_below_12v, jump_above_3v3, jump_below_3v3]
 ramp_test_configurations = [
-    [1000, 700, 400, 200],  # Test 1
+    [700, 1300, 400, 200],  # Test 1
     [800, 500, 300, 150]   # Test 2
-    # [1200, 900, 500, 300],   # Test 3
-    # [1500, 300, 100, 500]
 ]
 
-# We use TK for the directory selection box, this code avoids additional TK GUI items being shown
-root = tkinter.Tk()
-root.attributes("-topmost", True) #Put the tab to the front of the screen
-tkFileDialog = filedialog
-root.withdraw()
+#Ramp test timings
+# This is time from the start of the pattern, so step 2 must be more than step 1 etc
+timing_array_12v = ["25ms", "45ms", "95ms", "100ms", "575ms"]
+# This is time from the start of the pattern, so step 2 must be more than step 1 etc
+timing_array_3v3 = ["10ms", "35ms", "70ms", "80ms", "275ms"]
+
 
 def main():
     # # If you require logging, quarchpy logs everything level debug and above to file. It is also set to log to console
@@ -111,12 +133,12 @@ def main():
 
     # Module to work with
     print("\n-Requesting PPM selection")
-    #my_device_id = GetQpsModuleSelection(my_qps)
+    my_device_id = GetQpsModuleSelection(my_qps)
 
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address as shown below
     #my_device_id = "USB:QTL1999-06-127"
-    my_device_id = "TCP:10.0.8.100"
+    #my_device_id = "TCP:10.0.8.100"
 
     # Create a Quarch device connected via QPS
     my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
@@ -159,6 +181,8 @@ def main():
     response = my_ppm.send_command("RUN:POWer UP")
     print(f"RUN Power up command {response}")
 
+    #Set sample rate to 16us. You could use 4us or 1us (MegaPPM), but this is a long stream so there will be a lot of data.
+    #Default patterns are in millisecond range, so this is sufficient
     my_ppm.send_command("stream mode resample 16us")
 
     #Instead of using a standard directory, we need to target the drive path, because the drive will be dropping off and rebooting
@@ -197,13 +221,13 @@ def main():
     else:
         current_io_engine = "libaio"
 
-    # 3. Inject the engine AND the raw device path into the idle config
+    #Inject the IO engine, and raw drive path for idle workloads
     fio_profiles["idle_config"]["write"]["ioengine"] = current_io_engine
     fio_profiles["idle_config"]["write"]["filename"] = raw_device_path
     fio_profiles["idle_config"]["verify"]["ioengine"] = current_io_engine
     fio_profiles["idle_config"]["verify"]["filename"] = raw_device_path
 
-    # Initialise the sequence of FIO loads using a list literal
+    # Initialise the sequence of FIO loads
     fio_run_sequence = [
         {"is_loaded": False,
          "profile_name": "Idle",
@@ -244,10 +268,10 @@ def main():
 
     #Now we have the thresholds, wait 2 seconds before we start the stream
     time.sleep(2)
-    print("Creating stream folders, and starting stream")
+    print("Creating main stream folders, and starting stream...")
 
-    #Create stream path in a folder called Main_PLP_Tests in the current working directory
-    stream_path = os.path.join(os.getcwd(), "Main_PLP_Tests")
+    #Create stream path in a folder called Main_PLP_Tests_YY_MM_DD_HH_MM_SS in the current working directory
+    stream_path = os.path.join(os.getcwd(), f"Main_PLP_Tests_{timestamp_stream_start}")
 
     #Start stream and join the filepaths
     my_stream = my_ppm.start_stream(os.path.join(stream_path, timestamp_stream_start))
@@ -256,12 +280,12 @@ def main():
     ramp_results = run_ramp_tests(my_ppm, my_stream, brownout_12v, brownout_3v3, ramp_test_configurations, test_directory, fio_run_sequence)
 
     #Pause in between tests
-    visual_sleep(drive_reset_time, title="Switching tests, changing from ramp test to crowbar")
+    visual_sleep(drive_reset_time, title="Changing tests, changing from ramp test to crowbar")
 
     #Run the crowbar tests
     crowbar_results = run_crowbar_tests(my_ppm, my_stream, crowbar_slew_rates, brownout_12v, brownout_3v3, test_directory, fio_run_sequence)
 
-    #Sleep after the last test
+    #Sleep after the last test so we don't cut off data too early
     time.sleep(5)
 
     #Stop stream
@@ -270,22 +294,28 @@ def main():
     # Exit cleanly, close the PPM connection, leave QPS recording open for viewing
     my_ppm.close_connection()
 
-    #Combine the results from both tests
+    # Combine the results from both tests
     all_results = ramp_results + crowbar_results
-    #Start by setting overall pass to true
+    # Start by setting overall pass to true
     overall_pass = True
-    #Create an empty list to store failed tests
+    # Create an empty list to store failed tests
     failed_tests = []
 
-    #For each test result we have
-    for test_name, passed in all_results:
-        #If we've passed, log status as PASS
+    # For each test result we have
+    for test_name, passed, kb_lost in all_results:
+        # If we've passed, log status as PASS
         status = "PASS" if passed else "FAIL"
-        #If one test has failed, logged the whole test as failed
+        # If one test has failed, logged the whole test as failed
         if not passed:
             overall_pass = False
-            failed_tests.append(test_name)
+            #Display the KB lost if any
+            if kb_lost is not None and kb_lost > 0:
+                failed_tests.append(f"{test_name} ({kb_lost:.1f} KB lost)")
+            #If we failed but don't have a kb lost, print a more general error
+            else:
+                failed_tests.append(f"{test_name} (Failed: Drive dropped/Verify error)")
 
+    #Print an overall pass/fail status
     if overall_pass:
         print("\n***********************************************************************************")
         print("\nAll tests passed!")
@@ -294,13 +324,13 @@ def main():
         print("***********************************************************************************")
 
     else:
-        #If one test or more has failed, print the details of the failure
+        # If one test or more has failed, print the details of the failure
         print("\n***********************************************************************************")
         print("\nTEST FAILED!")
         for failed_test in failed_tests:
             print(f"  - {failed_test}")
         print("It is likely that your PLP implementation is not wholly successful in this test")
-        print("Consider re-running this test to confirm this\n")
+        print("Consider re-running this test with the same parameters to confirm this\n")
         print("***********************************************************************************")
 
     #When QPS is closed, the script will close
@@ -317,7 +347,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
         brownout_threshold_12v: Voltage on the 12V rail where the drive browns out
         brownout_threshold_3v3: Voltage on the 3v3 rail where the drive browns out
         test_directory: Drive path
-        run_sequence: FIO loads loaded from an external JSON
+        run_sequence: FIO loads from an external JSON
 
     """
     stream.add_annotation(title=f"Start of crowbar tests")
@@ -345,8 +375,6 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             fio_write = run_details["write"]
             fio_verify = run_details["verify"]
 
-            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-
             #Create the title
             test_1 = f"Crowbar_12V_to_GND_{profile_name}"
             result_1 = fio_functions.run_test_with_fio_load(
@@ -356,8 +384,6 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             )
             test_results.append((test_1, result_1))
 
-            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-
             test_2 =  f"Crowbar_3V3_GND_{profile_name}"
             result_2 = fio_functions.run_test_with_fio_load(
                 test_2 ,test_directory, fio_write, fio_verify, is_loaded,
@@ -365,8 +391,6 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
                 ppm, "3V3", rate_down, rate_up, None, f"Crowbar_3v3_to_Ground_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
             test_results.append((test_2, result_2))
-
-            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
 
             test_3 = f"Crowbar_12V_Brownout_{profile_name}"
             result_3 = fio_functions.run_test_with_fio_load(
@@ -376,10 +400,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             )
             test_results.append((test_3, result_3))
 
-            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-
-        #Check we have a brownout_threshold for 3V3 before attempting to crowbar to brownout_threshold
-        if brownout_threshold_3v3 != 0:
+            #Check we have a brownout_threshold for 3V3 before attempting to crowbar to brownout_threshold
             test_4 = f"Crowbar_3V3_Brownout_{profile_name}"
             result_4 = fio_functions.run_test_with_fio_load(
                 test_4,test_directory, fio_write, fio_verify, is_loaded,
@@ -387,10 +408,6 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
                 ppm, "3V3", rate_down, rate_up, brownout_threshold_3v3, f"Crowbar_3v3_to_Brownout_{profile_name}",f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
             test_results.append((test_4, result_4))
-
-            visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-        else:
-            print("Skipping 3V3 crowbar down to brownout level as it wasn't found")
 
     stream.add_annotation(title=f"End of crowbar tests")
     return test_results
@@ -500,7 +517,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
             test_name = f"Ramp_12V_A{jump_above_12v}_B{jump_below_12v}_{profile_name}"
 
             # Create the annotation
-            print(stream.add_annotation(title=f"Starting ramp {profile_name}"))
+            stream.add_annotation(title=f"Starting ramp {profile_name}")
 
             passed = fio_functions.run_test_with_fio_load(
                 f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
@@ -540,14 +557,11 @@ def ramp_at_brownout_threshold(ppm, brownout_threshold_12v:int, brownout_thresho
     #Sleep for 1 second before we start creating the pattern
     time.sleep(1)
 
-    timing_array_12v = ["20ms", "25ms", "50ms", "75ms", "575ms"]
-
     #Create the pattern on 12V
     create_pattern_around_threshold(ppm, "12V", brownout_threshold_12v, jump_above_12v, jump_below_12v, timing_array_12v)
 
     #Checks if we have found brownout_threshold_3v3. If we've found brownout_threshold on 3V3 this will be non-zero
     if brownout_threshold_3v3 != 0:
-        timing_array_3v3 = ["20ms", "25ms", "50ms", "75ms", "375ms"]
         create_pattern_around_threshold(ppm, "3V3", brownout_threshold_3v3, jump_above_3v3, jump_below_3v3, timing_array_3v3)
 
     #Sleep for 1 second after annotation
@@ -571,6 +585,7 @@ def create_pattern_around_threshold(ppm, rail, brownout_threshold:int, threshold
     """
     This is designed to create a pattern around a set threshold on a PPM.
     We want to ramp around the drive's brownout threshold. All points and voltage thresholds are configurable, but the overall pattern will remain the same
+    Add or remove steps as you prefer, timing_array index must match the test steps as shown
 
     The steps are designed as below
     1. We start at nominal voltage

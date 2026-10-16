@@ -1,7 +1,7 @@
 """
 Separate file to store functions related directly to FIO, so the main file can be kept for Quarchpy functions
-This is less likely to be viewed by a potential user, and neatens up the main script
-This also has AN-014 brownout test contained here, as it has it's own App Note
+This includes most of the FIO functions as we aren't using Quarchpy.FIO because it's blocking
+Also includes AN-014 Voltage Margining as it has it's own separate app note so it's less important to be visible
 """
 
 import os
@@ -14,7 +14,7 @@ from quarchpy.user_interface import visual_sleep
 
 def wait_and_poll_drive_remount(target_directory, drive_reset_time=10):
     """
-    Polls drive presence at 1Hz, for up to drive_reset_time, default is 20s.
+    Polls drive presence at 1Hz, for up to drive_reset_time, default is 10s.
     Parameters:
         target_directory (str): Folder located on the drive
         drive_reset_time (int): Timeout in seconds for the drive to come back online
@@ -24,7 +24,7 @@ def wait_and_poll_drive_remount(target_directory, drive_reset_time=10):
     while True:
         #Check if the path exists
         if os.path.exists(target_directory):
-            print("Drive has remounted")
+            print("Drive has remounted, progressing to next step")
             time.sleep(1)
             return True
         if (time.time() - start_time) > drive_reset_time:
@@ -44,8 +44,11 @@ def parse_fio_verify(fio_verify_output_str, block_size, test_name, load_name):
     """
     # Use regex to split the number and the unit (e.g., "4k" -> "4" and "k", "1M" -> "1" and "M")
     size_match = re.match(r'^(\d+)([a-zA-Z]*)$', str(block_size).strip())
+    #If we're able to split it
     if size_match:
+        #Assign the number to group 1 and cast as an integer
         block_size_num = int(size_match.group(1))
+        #Assign the multiplier in upper case
         multiplier = size_match.group(2).upper()
 
         #Compare the first index of the multiplier to calculate the multiplier we need. e.g. KB would enter this statement
@@ -58,7 +61,7 @@ def parse_fio_verify(fio_verify_output_str, block_size, test_name, load_name):
         #If Gigabyte block size
         elif multiplier[0] == "G":
             block_size_kb = block_size_num * 1024 * 1024
-        #No multiplier
+        #If no multiplier divide by 1024 to get KB
         elif multiplier[0] == "B" or multiplier[0] == "":
             block_size_kb = block_size_num / 1024
         else:
@@ -81,15 +84,15 @@ def parse_fio_verify(fio_verify_output_str, block_size, test_name, load_name):
 
         #If we've found errors, and they are more than 0
         if total_errors > 0:
-            print(f"PLP FAILED on {load_name}: Drive lost {total_errors} blocks ({data_lost_kb} KB of data).\n")
+            print(f"PLP FAILED on {test_name}: Drive lost {data_lost_kb} KB of data.\n")
             return data_lost_kb
         #This means that errors: total=0 is in the output string, so no errors detected
         else:
-            print(f"PLP PASSED on {load_name}: No errors detected.\n")
+            print(f"PLP PASSED on {test_name}: No errors detected.\n")
             return 0
     #If there's no errors: total line, we can't detect if there are actually errors
     else:
-        print(f"PLP PASSED on {load_name}: No errors detected.\n")
+        print(f"PLP PASSED on {test_name}: No errors detected.\n")
         return 0
 
 def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_write, is_loaded, plp_test, load_name, *plp_test_arguments):
@@ -136,6 +139,7 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
     plp_test(*plp_test_arguments)
 
     if is_loaded:
+        #This will wait here until the drive drops off and FIO stops
         fio_write.communicate()
         print(f"{test_name} Drive dropped off, FIO load ended")
 
@@ -165,6 +169,7 @@ def voltage_margin(ppm, ramp_time_12v:int, ramp_time_3v3:int, drive_reset_time=1
     """
     This is essentially App Note 14 Voltage Margining. This function has its own stream because we need to export to CSV which can't be done real-time
     We export to CSV to find where the brownout threshold is.
+    Stored in a separate file because this is already detailed on AN-014
 
     Parameters:
         ppm: The PPM to be used in test
@@ -232,8 +237,7 @@ def margin_12v_function(ppm, ramp_time:int):
 
     # Load 12V Pattern
     # To ramp down -12V down to 0 over 5s
-    response = ppm.send_command(f"SIGnal:12v:PATtern ADD {ramp_time}s -11998 i")
-    print(response)
+    ppm.send_command(f"SIGnal:12v:PATtern ADD {ramp_time}s -11998 i")
 
     # Wait 1 second for the pattern to be loaded
     time.sleep(1)
@@ -266,18 +270,15 @@ def margin_3v3_function(ppm, ramp_time:int):
     ppm.send_command("SIGnal:3v3:VOLTage 3300")
 
     # Load the 3V3 pattern
-    ppm.sendCommand(f"SIGnal:3v3:PATtern ADD {ramp_time}s -3300 i")
+    ppm.send_command(f"SIGnal:3v3:PATtern ADD {ramp_time}s -3300 i")
 
     # Wait 1 second for the pattern to be loaded
     time.sleep(1)
-
-    ppm.send_command("SIGnal:3v3:PATtern DUMP")
 
     # Run the 3v3 pattern
     ppm.send_command("RUN:PATtern 1")
 
     # Pattern will run over ramp_time seconds, so after ramp_time + 2 second buffer we will reset the rail to nominal
-    print("Margining 3V3 rail")
     visual_sleep(ramp_time + 2)
 
     # Clear any previous pattern
@@ -329,9 +330,9 @@ def find_brownout_voltage(csv_path):
 
     else:
         #If we don't have any rows matching the criteria, return None
-        brownout_level_12v = int(input("Could not detect the threshold of where the drive dropped off. Please enter the 12V threshold in millivolts"))
+        brownout_level_12v = int(input("Could not detect the threshold of where the drive dropped off. Please enter the 12V threshold in millivolts : \n"))
 
-    # We check if 3V3 power is more than 1mW when we aren't margining (first 3 seconds)
+    # We check if 3V3 power is more than 1mW when we aren't margining (first 3 seconds). This is an arbitrary threshold so could be changed
     # If the power is less than 1mW, we cannot accurately determine where the drive drops off, if it drops off at all.
     # So we display a message explaining why we can't
     # Get the power cells where time is less than 3 seconds (in uS)
@@ -343,7 +344,7 @@ def find_brownout_voltage(csv_path):
         print("We cannot accurately find where the drive drops off when margining the 3V3 rail")
 
         # Set the return variables to None
-        brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts"))
+        brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts : \n"))
 
     else:  # The drive uses more than 1mW when idle, so we assume that we can find where the drive drops off
         # Get the cells where 3V3 power is under the threshold
@@ -362,7 +363,7 @@ def find_brownout_voltage(csv_path):
 
         else:
             # If we don't have any rows matching the criteria, we will return 0
-            brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts"))
+            brownout_level_3v3 = int(input("Could not detect the brownout threshold. Please enter the 3V3 threshold in millivolts : \n"))
 
             print(f"Warning: 3V3 power never dropped below 1mW.")
 
