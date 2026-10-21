@@ -31,7 +31,7 @@ fio_configs.json holds the FIO loads and verifies used to write data and then ve
 The FIO load is designed for a Gen5 x4 link, but can be changed for different link widths and speeds
 
 Note: The script must be run from a separate drive other than the DUT, as we expect the DUT to drop off
-This can be run on Windows, but in testing Linux is much more resilient to hot plugs, even with a host card, so linux is suggested
+This script is developed for and tested on Linux only. Linux OS is much more tolerant to hotplugs compared to Windows, and drive paths are easier
 
 ########### VERSION HISTORY ###########
 16/10/2026 - Andrew Steedman - initial testing in a live system
@@ -84,11 +84,11 @@ from quarchpy.connection_specific.connection_QPS import QpsInterface
 drive_reset_time = 10
 
 # Store slew rates for crowbar testing here. Slew rates passed into the function are expected to be decimal values between 0 and 1.
-#Stored as mV/us == V/ms
+#Higher number is faster, maximum is 1000
 #[slew_down, slew_up]
 crowbar_slew_rates = [
-    [50, 3000], #Fast down, slow up
-    [2000, 100] #Slow down, fast up
+    [900, 100], #Fast down, slow up
+    [200, 900] #Slow down, fast up
 ]
 
 #Store the thresholds we jump above and below the threshold here. Stored in millivolts
@@ -191,8 +191,11 @@ def main():
     time.sleep(1)
 
     #Powers on PPM so drive can be detected
-    response = my_ppm.send_command("RUN:POWer UP")
-    print(f"RUN Power up command {response}")
+    if my_ppm.send_command("RUN:POWer?") == "DOWN":
+        my_ppm.send_command("RUN:POWer UP")
+        #Wait drive_reset_time before we start to look for the drive so we can be sure the drive is on line
+        time.sleep(drive_reset_time)
+
 
     #Set sample rate to 16us. You could use 4us or 1us (MegaPPM), but this is a long stream so there will be a lot of data.
     #Default patterns are in millisecond range, so this is sufficient
@@ -207,8 +210,8 @@ def main():
     # Get timestamp in YYMMDD-HHMMSS
     timestamp_stream_start = time.strftime("%Y_%m_%d-%H_%M_%S")
     #Create a timestamped folder for our FIO loads so that we target a new file every time. Otherwise FIO can reuse the same file and not perform any load
-    folder_name = f"fio_tests{timestamp_stream_start}"
-    test_directory = os.path.join(os.getcwd(), "Main_PLP_Tests", folder_name)
+    stream_path = os.path.join(os.getcwd(), f"Main_PLP_Tests_{timestamp_stream_start}")
+    test_directory = os.path.join(stream_path, "fio_debug_files")
 
     #If the filepath doesn't already exist
     if not os.path.exists(test_directory):
@@ -346,28 +349,31 @@ def main():
     sys.exit(0)
 
 def select_nvme_target():
-    """Function to get the NVMe drives on a system, get the specific unique ID, and display it to the user so they can select it
+    """Gets the NVMe drives on a system, get the specific unique ID, and display it to the user, and user selects the drive
 
     Returns: Drive selected in the path format
     """
-    #We need to target the specific drive ID. If we target /nvme1, there is a chance the device will remount as /nvme2 and corrupt data
-    #We'll get the list of drives found on the system
+    #We need to target the specific drive ID. If we target /nvme1, there is a chance the device will remount as another path and cause issues
+    #Get the list of drives found on the system
     by_id_dir = "/dev/disk/by-id/"
+    #If this path doesn't exist, raise an error
     if not os.path.exists(by_id_dir):
         print("Error: /dev/disk/by-id/ directory not found")
         sys.exit(1)
+    #Create an empty list of drives
     drives = []
 
     #For each drive found in /dev/disk/by-id/
     for link_name in os.listdir(by_id_dir):
         #For every actual drive, and not partition
         if link_name.startswith("nvme-") and "-part" not in link_name:
+            #Get the full path
             full_path = os.path.join(by_id_dir, link_name)
+            #Returns true if the path is an existing entry that is a symbolic link
             if os.path.islink(full_path):
                 short_name = os.path.basename(os.readlink(full_path))
                 #If this is the original drive, and not a duplicate entry
                 if short_name.startswith("nvme") and not link_name.startswith("nvme-eui."):
-
                     #Get the Model and Size using lsblk (list partitions)
                     try:
                         lsblk_cmd = ["lsblk", "-d", "-n", "-o", "NAME,MODEL,SIZE", f"/dev/{short_name}"]
@@ -377,7 +383,7 @@ def select_nvme_target():
 
                     #If this is not a duplicate
                     if not any(drive['short_name'] == short_name for drive in drives):
-                        #Append it to the list fo drives
+                        #Append it to the list of drives
                         drives.append({"short_name": short_name,
                                        "persistent_path" : full_path,
                                        "display_info": info})
@@ -385,14 +391,25 @@ def select_nvme_target():
         print("No NVMe drives found")
         sys.exit(1)
 
-    print(f"drives: {drives}")
     #Separate the dictionary of drives into a comma separated string
     selection_string = ",".join([drive["display_info"] for drive in drives])
 
+    #Take the users input in a list selection
     selected_drive = listSelection(title="", message="Please select the DUT", selectionList=selection_string, nice=True)
 
+    #Get the persistent path from the list_selection choice
+    path_map = {d['display_info']: d['persistent_path'] for d in drives}
+
+    #If the path exists
+    if selected_drive in path_map:
+        #Get the full path
+        actual_path = path_map[selected_drive]
+    else:
+        print("ERROR: Drive selected is not in path map.")
+        sys.exit(1)
+
     print(f"Selected NVMe drive: {selected_drive}")
-    return selected_drive
+    return actual_path
 
 
 def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brownout_threshold_3v3:int, test_directory, run_sequence):
@@ -422,9 +439,9 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
     for rates in slew_rates:
         #Because the slew rates are stored as mV/us to read nicer, divide by 1000 to get V/us which is passed in to the function
         rate_down = rates[0] / 1000
-        print(f"Rate down: {rate_down}")
+        print(f"Slew rate down: {rate_down}")
         rate_up = rates[1] / 1000
-        print(f"Rate up: {rate_up}")
+        print(f"Slew rate up: {rate_up}")
 
         #For each idle case and loads
         for run_details in run_sequence:
@@ -539,8 +556,6 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     #Command will be similar to "SIGnal:12V:PATtern ADD 60us 0 i"
     ppm.send_command(f"SIGnal:{rail}:PATtern ADD {rise_time} 0 i")
 
-    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
-
     #Sleep for 1 second after pattern is set
     time.sleep(1)
 
@@ -549,6 +564,9 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
 
     #Sleep for 1 second after the pattern is run. Assume most patterns are sub 100ms, with most likely being in us range.
     time.sleep(1)
+
+    #Wait for the drive to come back online
+    visual_sleep(drive_reset_time, title="Wait for drive to be stable")
 
     ppm.send_command("SIGnal:12V:PATtern CLEAR")
     ppm.send_command("SIGnal:3V3:PATtern CLEAR")
