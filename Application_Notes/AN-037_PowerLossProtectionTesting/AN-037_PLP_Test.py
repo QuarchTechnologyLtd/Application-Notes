@@ -20,7 +20,8 @@ With default configurations, the test will last for approximately x minutes
 The aim of these tests is to cause PLP to kick in.
 We perform these tests under idle, as well as under load, to check that we don't corrupt data in transit, and that the drive remaps correctly.
 After each test we verify the data to check for data loss, and at the end give an overall pass/fail scenario
-The ideal case is no data loss, and the drive remaps correctly after sudden power loss. This would show that the hardware and FW implementation of PLP is likely sufficient.
+
+The ideal result is no data loss, and the drive remaps correctly after sudden power loss. This would show that the hardware and FW implementation of PLP is likely sufficient.
 
 The parameters of the tests are configurable, and should be changed over different test runs to give a wide variety of tests.
 This includes the timings of patterns, the steps in the pattern, and slew rates in the pattern.
@@ -30,6 +31,7 @@ fio_configs.json holds the FIO loads and verifies used to write data and then ve
 The FIO load is designed for a Gen5 x4 link, but can be changed for different link widths and speeds
 
 Note: The script must be run from a separate drive other than the DUT, as we expect the DUT to drop off
+This can be run on Windows, but in testing Linux is much more resilient to hot plugs, even with a host card, so linux is suggested
 
 ########### VERSION HISTORY ###########
 16/10/2026 - Andrew Steedman - initial testing in a live system
@@ -43,7 +45,7 @@ Note: The script must be run from a separate drive other than the DUT, as we exp
 
     Hardware:
         Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
-        Local control PC - either Windows or Linux
+        Local control PC - suggested Linux but Windows could be used
         Hot-pluggable system
         Enterprise drive with PLP implemented
         Relevant power Injection fixture
@@ -78,7 +80,7 @@ from quarchpy.user_interface import *
 from quarchpy.connection_specific.connection_QPS import QpsInterface
 
 # This is how long we will wait for a drive to come back online after a test before we move on to the next test
-# For NVMe drives this could probably be reduced, but to maximise compatibility default to 20 seconds
+# For NVMe drives this could probably be reduced, but to maximise compatibility default to 10 seconds
 drive_reset_time = 10
 
 # Store slew rates for crowbar testing here. Slew rates passed into the function are expected to be decimal values between 0 and 1.
@@ -86,9 +88,7 @@ drive_reset_time = 10
 #[slew_down, slew_up]
 crowbar_slew_rates = [
     [50, 3000], #Fast down, slow up
-    [2000, 100], #Slow down, fast up
-    [500, 500], #Medium rate up and down
-    [200, 200]
+    [2000, 100] #Slow down, fast up
 ]
 
 #Store the thresholds we jump above and below the threshold here. Stored in millivolts
@@ -100,7 +100,7 @@ ramp_test_configurations = [
 
 #Ramp test timings
 # This is time from the start of the pattern, so step 2 must be more than step 1 etc
-timing_array_12v = ["25ms", "45ms", "95ms", "100ms", "575ms"]
+timing_array_12v = ["25ms", "95ms", "120ms", "150ms", "575ms"]
 # This is time from the start of the pattern, so step 2 must be more than step 1 etc
 timing_array_3v3 = ["10ms", "35ms", "70ms", "80ms", "275ms"]
 
@@ -115,6 +115,11 @@ def main():
 
     #Check the user is running a relatively recent version of Quarchpy
     requiredQuarchpyVersion("2.2.23")
+
+    if os.name == "nt":
+        print("Windows is not supported on this App Note.")
+        print("Windows is a lot less tolerant to Hot Plugs, even with a host-card/hot pluggable platform therefore it is not recommended")
+        sys.exit(0)
 
     #Displays the title as a list
     displayTable("AN-037 Power Loss Protection Tests", printToConsole=True, align="c")
@@ -133,12 +138,12 @@ def main():
 
     # Module to work with
     print("\n-Requesting PPM selection")
-    my_device_id = GetQpsModuleSelection(my_qps)
+    #my_device_id = GetQpsModuleSelection(my_qps)
 
     #If you know the name of the module you would like to talk to, then comment out module selection and
     #hardcode the string using the serial number or IP address as shown below
-    #my_device_id = "USB:QTL1999-06-127"
-    #my_device_id = "TCP:10.0.8.100"
+    my_device_id = "TCP::QTL1999-06-127"
+    #my_device_id = "TCP::10.0.8.100"
 
     # Create a Quarch device connected via QPS
     my_quarch_device = get_quarch_device(my_device_id, ConType="QPS")
@@ -175,6 +180,14 @@ def main():
             # Exit the script
             sys.exit(0)
 
+    #If auto-detected as a 5V fixture
+    elif conf_out == "5V":
+        print("5V fixture detected, exiting script")
+        print("This script is designed for PCIe devices with a 12V rail and a 3V3 rail, not a 5V rail")
+        # Exit cleanly, close the PPM connection and QPS
+        my_ppm.close_connection()
+        closeQps()
+
     time.sleep(1)
 
     #Powers on PPM so drive can be detected
@@ -185,11 +198,7 @@ def main():
     #Default patterns are in millisecond range, so this is sufficient
     my_ppm.send_command("stream mode resample 16us")
 
-    #Instead of using a standard directory, we need to target the drive path, because the drive will be dropping off and rebooting
-    print("\n>>> Please enter the raw device path for the DUT:")
-    print("Linux example: /dev/nvme1n1")
-    print("Windows example: \\\\.\\D")
-    raw_device_path = input("> ").strip()
+    raw_device_path = select_nvme_target()
 
     if not raw_device_path:
         raise Exception("No device path selected")
@@ -215,16 +224,10 @@ def main():
         print("Error: fio_configs.json not found")
         sys.exit(1)
 
-    #Select the IO engine based on os
-    if os.name == "nt":
-        current_io_engine = "windowsaio"
-    else:
-        current_io_engine = "libaio"
-
     #Inject the IO engine, and raw drive path for idle workloads
-    fio_profiles["idle_config"]["write"]["ioengine"] = current_io_engine
+    fio_profiles["idle_config"]["write"]["ioengine"] = "libaio"
     fio_profiles["idle_config"]["write"]["filename"] = raw_device_path
-    fio_profiles["idle_config"]["verify"]["ioengine"] = current_io_engine
+    fio_profiles["idle_config"]["verify"]["ioengine"] = "libaio"
     fio_profiles["idle_config"]["verify"]["filename"] = raw_device_path
 
     # Initialise the sequence of FIO loads
@@ -238,9 +241,9 @@ def main():
     # For each write operation we have
     for load_profile in fio_profiles["loaded_configs"]:
         # Inject the engine AND the raw device path into each loaded workload
-        load_profile["write"]["ioengine"] = current_io_engine
+        load_profile["write"]["ioengine"] = "libaio"
         load_profile["write"]["filename"] = raw_device_path
-        load_profile["verify"]["ioengine"] = current_io_engine
+        load_profile["verify"]["ioengine"] = "libaio"
         load_profile["verify"]["filename"] = raw_device_path
 
         fio_run_sequence.append({
@@ -251,20 +254,20 @@ def main():
         })
 
     #Test 1 - Ask the user if they know the threshold already. If known, this will skip the test to find the threshold
-    brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
-    if brownout_already_found == "Yes":
-        brownout_12v = int(input("Please enter the brownout threshold for 12V in mV :"))
-        brownout_3v3 = int(input("Please enter the brownout threshold for 3V3 in mV :"))
-    else:
-        #Threshold is not known
-        print("Starting stream to find brownout threshold. This will be a separate stream to other testing")
-        #Find the threshold of a brownout on both rails by margining each rail individually down to 0V over 5 seconds
-        #This has its own separate stream because we need to export to CSV to find the threshold
-        brownout_12v, brownout_3v3 = fio_functions.voltage_margin(my_ppm, 5, 5, drive_reset_time)
+    # brownout_already_found = showYesNoDialog(title="Do you already know the brownout threshold for this drive?", message="Do you already know the brownout threshold for this drive?")
+    # if brownout_already_found == "Yes":
+    #     brownout_12v = int(input("Please enter the brownout threshold for 12V in mV :"))
+    #     brownout_3v3 = int(input("Please enter the brownout threshold for 3V3 in mV :"))
+    # else:
+    #     #Threshold is not known
+    #     print("Starting stream to find brownout threshold. This will be a separate stream to other testing")
+    #     #Find the threshold of a brownout on both rails by margining each rail individually down to 0V over 5 seconds
+    #     #This has its own separate stream because we need to export to CSV to find the threshold
+    #     brownout_12v, brownout_3v3 = fio_functions.voltage_margin(my_ppm, 5, 5, drive_reset_time)
 
     #OPTIONAL - If you want to hardcode thresholds, comment out block of code above, and uncomment 2 lines below
-    # brownout_12v = 8500
-    # brownout_3v3 = 2600
+    brownout_12v = 8500
+    brownout_3v3 = 2600
 
     #Now we have the thresholds, wait 2 seconds before we start the stream
     time.sleep(2)
@@ -302,9 +305,15 @@ def main():
     failed_tests = []
 
     # For each test result we have
-    for test_name, passed, kb_lost in all_results:
-        # If we've passed, log status as PASS
-        status = "PASS" if passed else "FAIL"
+    for result in all_results:
+        #If we have any KB lost, len(results) will be 3
+        if len(result) == 3:
+            test_name, passed, kb_lost = result
+        else: #No errors detected
+            test_name, passed = result
+            #Default to 0
+            kb_lost = 0
+
         # If one test has failed, logged the whole test as failed
         if not passed:
             overall_pass = False
@@ -336,6 +345,56 @@ def main():
     #When QPS is closed, the script will close
     sys.exit(0)
 
+def select_nvme_target():
+    """Function to get the NVMe drives on a system, get the specific unique ID, and display it to the user so they can select it
+
+    Returns: Drive selected in the path format
+    """
+    #We need to target the specific drive ID. If we target /nvme1, there is a chance the device will remount as /nvme2 and corrupt data
+    #We'll get the list of drives found on the system
+    by_id_dir = "/dev/disk/by-id/"
+    if not os.path.exists(by_id_dir):
+        print("Error: /dev/disk/by-id/ directory not found")
+        sys.exit(1)
+    drives = []
+
+    #For each drive found in /dev/disk/by-id/
+    for link_name in os.listdir(by_id_dir):
+        #For every actual drive, and not partition
+        if link_name.startswith("nvme-") and "-part" not in link_name:
+            full_path = os.path.join(by_id_dir, link_name)
+            if os.path.islink(full_path):
+                short_name = os.path.basename(os.readlink(full_path))
+                #If this is the original drive, and not a duplicate entry
+                if short_name.startswith("nvme") and not link_name.startswith("nvme-eui."):
+
+                    #Get the Model and Size using lsblk (list partitions)
+                    try:
+                        lsblk_cmd = ["lsblk", "-d", "-n", "-o", "NAME,MODEL,SIZE", f"/dev/{short_name}"]
+                        info = subprocess.check_output(lsblk_cmd, text=True).strip()
+                    except subprocess.CalledProcessError:
+                        info = f"{short_name} not found"
+
+                    #If this is not a duplicate
+                    if not any(drive['short_name'] == short_name for drive in drives):
+                        #Append it to the list fo drives
+                        drives.append({"short_name": short_name,
+                                       "persistent_path" : full_path,
+                                       "display_info": info})
+    if not drives:
+        print("No NVMe drives found")
+        sys.exit(1)
+
+    print(f"drives: {drives}")
+    #Separate the dictionary of drives into a comma separated string
+    selection_string = ",".join([drive["display_info"] for drive in drives])
+
+    selected_drive = listSelection(title="", message="Please select the DUT", selectionList=selection_string, nice=True)
+
+    print(f"Selected NVMe drive: {selected_drive}")
+    return selected_drive
+
+
 def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brownout_threshold_3v3:int, test_directory, run_sequence):
     """
     This function repeats a pattern of crowbars across both rails, both to ground, and down to brownout_threshold
@@ -363,7 +422,9 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
     for rates in slew_rates:
         #Because the slew rates are stored as mV/us to read nicer, divide by 1000 to get V/us which is passed in to the function
         rate_down = rates[0] / 1000
+        print(f"Rate down: {rate_down}")
         rate_up = rates[1] / 1000
+        print(f"Rate up: {rate_up}")
 
         #For each idle case and loads
         for run_details in run_sequence:

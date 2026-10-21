@@ -127,12 +127,14 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
 
     if is_loaded:
         fio_write = subprocess.Popen(cmd_write, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=test_directory)
+        print(f"DEBUG: Running command {' '.join(cmd_write)}")
         #Sleep 2 seconds to build the FIO command
         time.sleep(2)
 
     else:
         #If this is an idle test load, we will start by writing a small file before we perform the test to verify it
         print(f"{load_name} Writing small file prior to idle tests")
+        print(f"DEBUG: Running command {' '.join(cmd_write)}")
         subprocess.run(cmd_write, capture_output=True)
 
     print(f"{load_name} Starting PLP Test...\b")
