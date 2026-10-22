@@ -14,7 +14,7 @@ Then, we crowbar the rails, both down to ground, and down to it's brownout thres
 Our default patterns are in milliseconds, although microsecond range could be used.
 The PPM can slew upwards at 1V/us without a load, but with a drive connected the true slew rates are likely to be much slower, due to the capacitance of the drive.
 
-With default configurations, the test will last for approximately 30 minutes
+With default configurations, the test will last for approximately 35 minutes
 
 The aim of these tests is to cause PLP to kick in.
 We perform these tests under idle, as well as under load, to check that we don't corrupt data in transit, and that the drive remaps correctly.
@@ -24,7 +24,8 @@ The ideal result is no data loss, and the drive remaps correctly after sudden po
 
 The parameters of the tests are configurable, and should be changed over different test runs to give a wide variety of tests.
 This includes the timings of patterns, the steps in the pattern, and slew rates in the pattern.
-These are stored as global variables so they are easy to spot and modify
+These are stored as global variables so they are easy to spot and modify.
+By default, we use quite a few different configs, but more should be included for complete testing.
 
 fio_configs.json holds the FIO loads and verifies used to write data and then verify data from the drive
 The FIO load is designed for a Gen5 x4 link, but can be changed for different link widths and speeds
