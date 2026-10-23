@@ -360,13 +360,20 @@ def main():
 
             writer = csv.writer(csvfile)
             #Write the CSV titles
-            writer.writerow(["Test Name", "Status", "KB Lost", "Parameters"])
+            writer.writerow(["Test Name", "Block Size", "Status", "KB Lost", "Parameters"])
 
             #For each result
             for result in all_results:
                 test_name, passed, kb_lost, parameters = result
                 status = "PASSED" if passed else "FAILED"
-                writer.writerow([test_name, status, kb_lost, parameters])
+
+                #Get the load block size so we can save it to it's own column
+                if "Load_" in test_name:
+                    block_size = test_name.split("_")[-1]
+                else:
+                    block_size = "N/A"
+
+                writer.writerow([test_name, block_size, status, kb_lost, parameters])
 
         # If one test or more has failed, print the details of the failure
         print("\n***********************************************************************************")
