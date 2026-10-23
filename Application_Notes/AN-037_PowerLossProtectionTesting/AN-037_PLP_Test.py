@@ -291,7 +291,7 @@ def main():
         multiplier = 4
     number_of_crowbar_tests = len(crowbar_slew_rates) * len(fio_run_sequence) * multiplier
     total_number_of_tests = number_of_ramp_tests + number_of_crowbar_tests
-    test_counter = [1, total_number_of_tests]
+    test_counter = [0, total_number_of_tests]
 
     #Create stream path in a folder called Main_PLP_Tests_YY_MM_DD_HH_MM_SS in the current working directory
     stream_path = os.path.join(os.getcwd(), f"Main_PLP_Tests_{timestamp_stream_start}")
@@ -671,10 +671,11 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
 
                 test_name = f"Test {test_counter[0]}/{test_counter[1]}: Ramp_12V_A{jump_above_12v}_B{jump_below_12v}_{profile_name}"
                 print(test_name)
-                test_counter[0] += 1
 
                 # Create the annotation
                 stream.add_annotation(title=f"Test {test_counter[0]}/{test_counter[1]}: Starting ramp {profile_name}")
+                #Increment the counter
+                test_counter[0] += 1
 
                 passed, kb_lost = fio_functions.run_test_with_fio_load(
                     f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
