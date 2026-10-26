@@ -495,7 +495,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 
             test_parameters = f"Slew down: {rate_down}, Slew up: {rate_up}"
 
-            # --- Test 1 ---
+            #Test 1
             base_test_1 = f"Crowbar_12V_to_GND_{profile_name}"
             display_test_1 = f"Test {test_counter[0]}/{test_counter[1]}: {base_test_1}"
             print(display_test_1)
@@ -510,7 +510,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             test_results.append(
                 (display_test_1, result_1, kb_lost1, test_parameters))  # <-- Save the display string here
 
-            # --- Test 2 ---
+            #Test 2
             base_test_2 = f"Crowbar_3V3_GND_{profile_name}"
             display_test_2 = f"Test {test_counter[0]}/{test_counter[1]}: {base_test_2}"
             print(display_test_2)
@@ -524,7 +524,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             )
             test_results.append((display_test_2, result_2, kb_lost2, test_parameters))
 
-            # --- Test 3 ---
+            #Test 3
             base_test_3 = f"Crowbar_12V_Brownout_{profile_name}"
             display_test_3 = f"Test {test_counter[0]}/{test_counter[1]}: {base_test_3}"
             print(display_test_3)
@@ -540,7 +540,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 
             #Check that 3V3 brownout threshold is non zero
             if brownout_threshold_3v3 != 0:
-                # --- Test 4 ---
+                #Test 4
                 base_test_4 = f"Crowbar_3V3_Brownout_{profile_name}"
                 display_test_4 = f"Test {test_counter[0]}/{test_counter[1]}: {base_test_4}"
                 print(display_test_4)
@@ -553,6 +553,8 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
                     f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
                 )
                 test_results.append((display_test_4, result_4, kb_lost4, test_parameters))
+            else:
+                print("Skipping 3V3 brownout crowbar test as threshold wasn't found")
 
     stream.add_annotation(title=f"End of crowbar tests")
     return test_results
@@ -578,6 +580,9 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     else:
         print("Rail not recognised")
         nominal_voltage = None
+
+    #Sleep for FIO command to build
+    time.sleep(5)
 
     #Check that the slew rates are not faster than what we can do
     #We specify 1V/us with no load, in practice the slew rates are going to be much slower
