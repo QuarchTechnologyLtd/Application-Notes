@@ -7,11 +7,11 @@ This test is designed to test PLP implementation on enterprise SSDs with a Quarc
 This is the main script for PLP tests. This holds most of the controls of the PPM, that may be useful to your own scripting.
 fio_functions.py contains the relevant sections of AN-014 to find the brownout threshold as well as the direct commands to run the FIO operations and verify the FIO operations
 
-We start by finding the threshold of where the drive will brownout, unless this is already known
+We start by finding the threshold of where the drive will brownout, unless this is already known. This is essentially AN-014 Voltage Margining.
 Then, we start to ramp the voltage around the brownout threshold, to get PLP on the verge of kicking in.
 Then, we crowbar the rails, both down to ground, and down to it's brownout threshold.
 
-Our default patterns are in milliseconds, although microsecond range could be used.
+Our default patterns are in milliseconds, although microsecond range could be used, so we stream at 64us which gives sufficient resolution and should be able to stream on all PCs.
 The PPM can slew upwards at 1V/us without a load, but with a drive connected the true slew rates are likely to be much slower, due to the capacitance of the drive.
 
 With default configurations, the test will last for approximately 35 minutes
@@ -23,9 +23,7 @@ After each test we verify the data to check for data loss, and at the end give a
 The ideal result is no data loss, and the drive remaps correctly after sudden power loss. This would show that the hardware and FW implementation of PLP is likely sufficient.
 
 The parameters of the tests are configurable, and should be changed over different test runs to give a wide variety of tests.
-This includes the timings of patterns, the steps in the pattern, and slew rates in the pattern.
 These are stored as global variables so they are easy to spot and modify.
-By default, we use quite a few different configs, but more should be included for complete testing.
 
 fio_configs.json holds the FIO loads and verifies used to write data and then verify data from the drive
 The FIO load is designed for a Gen5 x4 link, but can be changed for different link widths and speeds
@@ -34,7 +32,7 @@ Note: The script must be run from a separate drive other than the DUT, as we exp
 This script is developed for and tested on Linux only. Linux OS is much more tolerant to hotplugs compared to Windows, and drive paths are easier
 
 ########### VERSION HISTORY ###########
-16/10/2026 - Andrew Steedman - initial testing in a live system
+04/11/2026 - Andrew Steedman - First Release
 
 ########### REQUIREMENTS ###########
     Software:
@@ -45,9 +43,9 @@ This script is developed for and tested on Linux only. Linux OS is much more tol
 
     Hardware:
         Quarch HD-PPM Plus (QTL1999, QTL1995) or MegaPPM (QTL3358) connected to the host PC via USB or LAN
-        Local control PC - suggested Linux but Windows could be used
+        Linux PC - host PC is also control PC.
         Hot-pluggable system
-        Enterprise drive with PLP implemented
+        Enterprise drive with PLP
         Relevant power Injection fixture
 
 ########### INSTRUCTIONS ###########
@@ -56,8 +54,8 @@ This script is developed for and tested on Linux only. Linux OS is much more tol
 3. Connect Power Injection Fixture to Host
 4. Power on the PPM
 5. Power on the host
-6. Get the drive path
-7. Run AN-037_PLP_Test.py
+6. Ensure the drive shows under lsblk
+7. Run AN-037_PLP_Test.py with administrator rights
 """
 
 # Import other libraries used in the examples
@@ -84,7 +82,7 @@ from quarchpy.connection_specific.connection_QPS import QpsInterface
 # This could be increased or decreased depending on your specific drive
 drive_reset_time = 10
 
-# Store slew rates for crowbar testing here. Slew rates passed into the function are expected to be decimal values between 0 and 1.
+# Store slew rates for crowbar testing here in mV/us. Slew rates passed into the function are expected to be decimal values between 0 and 1 so V/us.
 #Higher number is faster, maximum is 1000 because PPM fastest no load slew rate is 1V/us
 #[slew_down, slew_up]
 crowbar_slew_rates = [
@@ -129,7 +127,7 @@ def main():
     print("********************* Instructions *********************")
     print("\nThis script must be run from a drive other than the DUT")
     print("The DUT and host must be hot-pluggable")
-    print("The drive must be found under lsblk - does not need to be mounted or formatted\n")
+    print("The drive must be found under lsblk\n")
 
     #Checks if QPS is running on the local machine
     if not isQpsRunning():
@@ -204,6 +202,7 @@ def main():
     if my_ppm.send_command("RUN:POWer?") == "DOWN":
         my_ppm.send_command("RUN:POWer UP")
         #Wait drive_reset_time before we start to look for the drive so we can be sure the drive is on line
+        visual_sleep(drive_reset_time, title="Wait for drive to become online")
         time.sleep(drive_reset_time)
 
     #Set sample rate to 64us. You could use a faster sample rate, but this is a long stream so there is a lot of data
@@ -213,6 +212,7 @@ def main():
     #Calls the drive selection function
     raw_device_path = select_nvme_target()
 
+    #If no drive is selected, raise an Exception
     if not raw_device_path:
         raise Exception("No device path selected")
 
@@ -273,7 +273,7 @@ def main():
         #This has its own separate stream because we need to export to CSV to find the threshold
         brownout_12v, brownout_3v3 = fio_functions.voltage_margin(my_ppm, 5, 5, drive_reset_time)
 
-    # #OPTIONAL - If you want to hardcode thresholds, comment out block of code above, and uncomment 2 lines below
+    # #OPTIONAL - If you want to hardcode brownout thresholds, comment out block of code above, and uncomment 2 lines below
     #brownout_12v = 8500
     #brownout_3v3 = 0
 
@@ -283,15 +283,11 @@ def main():
 
     #Calculate the number of tests there are to run so we can print this
     number_of_ramp_tests = len(ramp_test_configurations) * len(ramp_test_timings) * len(fio_run_sequence)
-    #If brownout is 0, we skip the crowbar 3v3 to brownout, so the number of crowbar tests is 3
-    if brownout_3v3 == 0:
-        multiplier = 3
-    #If it's a non-zero value, the number of crowbar tests is 4
-    else:
-        multiplier = 4
-    number_of_crowbar_tests = len(crowbar_slew_rates) * len(fio_run_sequence) * multiplier
+
+    #Multiply by 4 as we have 4 crowbar tests
+    number_of_crowbar_tests = len(crowbar_slew_rates) * len(fio_run_sequence) * 4
     total_number_of_tests = number_of_ramp_tests + number_of_crowbar_tests
-    test_counter = [0, total_number_of_tests]
+    test_counter = [1, total_number_of_tests]
 
     #Create stream path in a folder called Main_PLP_Tests_YY_MM_DD_HH_MM_SS in the current working directory
     stream_path = os.path.join(os.getcwd(), f"Main_PLP_Tests_{timestamp_stream_start}")
@@ -339,9 +335,9 @@ def main():
             # Display the KB lost
             if kb_lost is not None and kb_lost > 0:
                 failed_tests.append(f"{test_name} ({kb_lost:.1f} KB lost)")
-            # If we failed but genuinely don't have a kb lost, print the general error
+            # If we failed but don't have a kb lost, print the general error
             else:
-                failed_tests.append(f"{test_name} (Failed: Data loss detected)")
+                failed_tests.append(f"{test_name} Failed: Data loss detected")
 
     #Print an overall pass/fail status
     if overall_pass:
@@ -367,7 +363,7 @@ def main():
                 test_name, passed, kb_lost, parameters = result
                 status = "PASSED" if passed else "FAILED"
 
-                #Get the load block size so we can save it to it's own column
+                #Get the load block size so we can save it to its own column
                 if "Load_" in test_name:
                     block_size = test_name.split("_")[-1]
                 else:
@@ -391,10 +387,10 @@ def main():
 
 def select_nvme_target():
     """Gets the NVMe drives on a system, get the specific unique ID, and display it to the user, and user selects the drive
+    We need the specific unique ID as there is a chance that if /dev/nvme1 is selected, it can remount as e.g. /dev/nvme2
 
     Returns: Drive selected in the path format
     """
-    #We need to target the specific drive ID. If we target /nvme1, there is a chance the device will remount as another path and cause issues
     #Get the list of drives found on the system
     by_id_dir = "/dev/disk/by-id/"
     #If this path doesn't exist, raise an error
@@ -437,6 +433,7 @@ def select_nvme_target():
 
     #Take the users input in a list selection
     selected_drive = listSelection(title="", message="Please select the DUT", selectionList=selection_string, nice=True)
+    print("\nIf the desired drive is not showing, reboot the host PC. The PPM is now powered up so the drive should show")
 
     #Get the persistent path from the list_selection choice
     path_map = {d['display_info']: d['persistent_path'] for d in drives}
@@ -497,18 +494,22 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
 
             #Test 1
             base_test_1 = f"Crowbar_12V_to_GND_{profile_name}"
+            # Display the test number
             display_test_1 = f"Test {test_counter[0]}/{test_counter[1]}: {base_test_1}"
             print(display_test_1)
+            # Increment the counter
             test_counter[0] += 1
 
+            #Test 1 - Call the FIO load, pass in the test parameters
             result_1, kb_lost1 = fio_functions.run_test_with_fio_load(
-                base_test_1, test_directory, fio_write, fio_verify, is_loaded,  # <-- Pass the clean base_test_1 here
+                base_test_1, test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "12V", rate_down, rate_up, None, f"Crowbar_12v_to_Ground_{profile_name}",
                 f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+            #Save the results of the test to a list
             test_results.append(
-                (display_test_1, result_1, kb_lost1, test_parameters))  # <-- Save the display string here
+                (display_test_1, result_1, kb_lost1, test_parameters))
 
             #Test 2
             base_test_2 = f"Crowbar_3V3_GND_{profile_name}"
@@ -516,6 +517,7 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             print(display_test_2)
             test_counter[0] += 1
 
+            #Test 2
             result_2, kb_lost2 = fio_functions.run_test_with_fio_load(
                 base_test_2, test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
@@ -530,12 +532,14 @@ def run_crowbar_tests(ppm, stream, slew_rates, brownout_threshold_12v:int, brown
             print(display_test_3)
             test_counter[0] += 1
 
+            #Test 3
             result_3, kb_lost3 = fio_functions.run_test_with_fio_load(
                 base_test_3, test_directory, fio_write, fio_verify, is_loaded,
                 crowbar_with_annotation, profile_name,
                 ppm, "12V", rate_down, rate_up, brownout_threshold_12v, f"Crowbar_12v_to_Brownout_{profile_name}",
                 f"Slew rate down: {rates[0]}mV/us.\n Slew rate up: {rates[1]}mV/us."
             )
+
             test_results.append((display_test_3, result_3, kb_lost3, test_parameters))
 
             #Check that 3V3 brownout threshold is non zero
@@ -585,7 +589,7 @@ def crowbar_one_rail(ppm, rail:str, slew_rate_down:float, slew_rate_up:float, br
     time.sleep(5)
 
     #Check that the slew rates are not faster than what we can do
-    #We specify 1V/us with no load, in practice the slew rates are going to be much slower
+    #We specify 1V/us upwards with no load, in practice the slew rates are going to be much slower due to the capacitance of the drive
     if slew_rate_down > 1.0:
         print("Slew rate down selected is faster than PPM can do with no load, setting 1V/us")
         slew_rate_down = 1.0
@@ -670,6 +674,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
         jump_above_3v3 = config[2]
         jump_below_3v3 = config[3]
 
+        #For each timing we have
         for timings in timing_array:
             timings_12v, timings_3v3 = timings
 
@@ -681,6 +686,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
                 fio_write = run_details["write"]
                 fio_verify = run_details["verify"]
 
+                #Print the test name and counter to console
                 test_name = f"Test {test_counter[0]}/{test_counter[1]}: Ramp_12V_A{jump_above_12v}_B{jump_below_12v}_{profile_name}"
                 print(test_name)
 
@@ -689,6 +695,7 @@ def run_ramp_tests(ppm, stream, brownout_12v, brownout_3v3, ramp_configurations,
                 #Increment the counter
                 test_counter[0] += 1
 
+                #Run the FIO load with the test parameters
                 passed, kb_lost = fio_functions.run_test_with_fio_load(
                     f"Ramp_Test_{profile_name}", test_directory, fio_write, fio_verify, is_loaded, ramp_at_brownout_threshold, profile_name,
                     ppm, brownout_12v, brownout_3v3, jump_above_12v, jump_below_12v, jump_above_3v3, jump_below_3v3, timings_12v, timings_3v3

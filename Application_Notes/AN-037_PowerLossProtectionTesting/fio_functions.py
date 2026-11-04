@@ -154,6 +154,7 @@ def run_test_with_fio_load(test_name, test_directory, fio_write_load, verify_wri
         cmd_verify.append(f"--{k}" if v == "" else f"--{k}={v}")
 
     print("Verifying drive data to check for data loss")
+    #Run the verify command
     result = subprocess.run(cmd_verify, capture_output=True, text=True, cwd=test_directory)
 
     # Parse results, pass in the block size to calculate how many kb lost
@@ -201,7 +202,7 @@ def voltage_margin(ppm, ramp_time_12v:int, ramp_time_3v3:int, drive_reset_time=1
     margin_12v_function(ppm, ramp_time_12v)
 
     #Sleep 5 seconds before margining 3V3
-    visual_sleep(5)
+    visual_sleep(drive_reset_time, title="Pause in between tests")
 
     margin_3v3_function(ppm, ramp_time_3v3)
 
@@ -344,8 +345,8 @@ def find_brownout_voltage(csv_path):
         print("We cannot accurately find where the drive drops off when margining the 3V3 rail")
         print("Therefore we can't test 3V3 crowbar to brownout threshold")
 
-        # Set the return variables to 0
-        brownout_level_3v3 = 0
+        #If we can't find it, take user input
+        brownout_level_3v3 = int(input("Please enter the 3V3 brownout threshold in millivolts : \n"))
 
     else:  # The drive uses more than 1mW when idle, so we assume that we can find where the drive drops off
         # Get the cells where 3V3 power is under the threshold
@@ -363,7 +364,7 @@ def find_brownout_voltage(csv_path):
             brownout_level_3v3 = col_3v3_volt.loc[target_index]
 
         else:
-            # If we don't have any rows matching the criteria, we will return 0
+            # If we don't have any rows matching the criteria, we will take user input
             brownout_level_3v3 = int(input("Please enter the 3V3 brownout threshold in millivolts : \n"))
 
             print(f"Warning: 3V3 power never dropped below 1mW.")
