@@ -1,0 +1,10 @@
+Copyright (c) [2025] Quarch Technology Ltd.
+
+This project is provided under the terms and conditions outlined in our official license agreement.
+
+For full licensing details, please visit:  
+https://quarch.com/legal/
+
+By using this software, you agree to the terms specified on our legal page.
+
+For any questions regarding licensing, please contact support@quarch.com.
