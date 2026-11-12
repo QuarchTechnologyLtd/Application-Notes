@@ -299,7 +299,7 @@ def setupSimpleHotplug(my_device, delay_time, step_count, is_legacy):
         exitScript(my_device, 'stepCount must be between 1 and 6')
 
     # Run through all 6 timed sources on the module
-    for steps in (1, step_count):
+    for steps in range(1, step_count + 1):
         # Calculate the next source delay. Additional sources are set to the last value used
         nextDelay = (steps - 1) * delay_time
         cmdResult = my_device.sendCommand("source:" + str(steps) + ":delay " + str(nextDelay))
